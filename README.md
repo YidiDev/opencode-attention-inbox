@@ -128,12 +128,18 @@ bun run tests/run.ts
 bun run audit
 ```
 
-> **Do not remove the `/** @jsxImportSource @opentui/solid */` pragma** at the top of
-> `src/tui.tsx`. The published package ships only `src/` (see `files`), so there is no
-> `tsconfig.json` next to it in `node_modules`; without the pragma Bun compiles JSX
-> against the `react` runtime and the TUI entry fails to load (`Cannot find package
-> 'react'`). OpenCode's loader only rewrites `@opentui/solid`, `solid-js` and
-> `@opencode/plugin` to its own runtime. `bun run tests/run.ts` asserts the pragma is present.
+> **Two packaging constraints for the TUI entry** — both are asserted by
+> `bun run tests/run.ts`:
+>
+> 1. Keep the `/** @jsxImportSource @opentui/solid */` pragma at the top of
+>    `src/tui.tsx`. The package ships only `src/` (see `files`), so there is no
+>    `tsconfig.json` next to it in `node_modules`; without the pragma Bun compiles
+>    JSX against the `react` runtime (`Cannot find package 'react'`).
+> 2. Keep `@opentui/core`, `@opentui/solid` and `solid-js` as **non-optional**
+>    `peerDependencies`. OpenCode rewrites those specifiers to its own runtime only
+>    for files it discovers by walking a plugin's import graph, and the TUI entry is
+>    not always reached — so they must be installed alongside the package
+>    (`Cannot find package '@opentui/solid'` otherwise).
 
 ## Layout
 

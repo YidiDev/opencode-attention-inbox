@@ -170,6 +170,26 @@ assert(
   "tui.tsx declares the @opentui/solid JSX runtime (pragma required without tsconfig)",
 )
 
+console.log("package.peers")
+// OpenCode only rewrites @opentui/solid, solid-js and @opencode/plugin for files
+// it discovers by walking a plugin's import graph, and the TUI entry is not
+// always reached. So the peers must actually be installed with the package:
+// marking them optional stops npm from installing them and the TUI entry then
+// fails with "Cannot find package '@opentui/solid'".
+const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
+  peerDependencies?: Record<string, string>
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>
+}
+const requiredPeers = ["@opentui/core", "@opentui/solid", "solid-js"]
+assert(
+  requiredPeers.every((name) => name in (manifest.peerDependencies ?? {})),
+  "OpenTUI/Solid peers are declared",
+)
+assert(
+  requiredPeers.every((name) => manifest.peerDependenciesMeta?.[name]?.optional !== true),
+  "peers are not optional, so they are installed with the plugin",
+)
+
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`)
   process.exit(1)

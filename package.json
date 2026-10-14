@@ -1,6 +1,6 @@
 {
   "name": "opencode-session-history",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenCode V2 CLI plugin: a sidebar session-history panel with click-to-resume.",
   "type": "module",
   "license": "MIT",
@@ -42,19 +42,8 @@
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.17",
-    "@opentui/solid": "^0.5.17",
-    "solid-js": "^1.9.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentui/core": {
-      "optional": true
-    },
-    "@opentui/solid": {
-      "optional": true
-    },
-    "solid-js": {
-      "optional": true
-    }
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.0"
   },
   "devDependencies": {
     "@opencode/client": "2.0.31",
