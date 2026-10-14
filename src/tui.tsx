@@ -11,17 +11,17 @@ import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCur
  * Behavior:
  *  - Lists sessions across every project, newest first, by default. When
  *    `options.showAllProjects` is false it is scoped to the current project.
- *  - Search box filters by title and id. OpenCode's renderer disables
- *    click-to-focus and the slot host does not focus plugin content, so the
- *    field is focused explicitly on click; escape clears the query, then
- *    blurs back to the prompt.
+ *  - Search box filters by title, id, project, or directory. OpenCode's
+ *    renderer disables click-to-focus and the slot host does not focus plugin
+ *    content, so the field is focused on click or with "/"; escape clears the
+ *    query, then blurs back to the prompt.
  *  - Click/Enter on a row: if the session is already open in a tab, focus
  *    it; otherwise open + focus the tab. When tabs are disabled, fall back
  *    to router.navigate({ type: "session" }).
  *  - Sessions whose working directory is gone on the server are dimmed and
- *    suffixed "· missing"; clicking shows a warning toast instead of opening.
- *    This is not "deleted" — that is a different state (the session record
- *    itself), which never appears in the list.
+ *    marked "✗ missing" in red; clicking shows a warning toast instead of
+ *    opening. This is not "deleted" — that is a different state (the session
+ *    record itself), which never appears in the list.
  *
  * Cross-project listing: `context.data.session.list()` only reflects the
  * sessions the CLI has already cached (mostly the current location), so when
@@ -220,6 +220,14 @@ function SidebarHistory(props: {
     filterSessions(allSessions(), query(), context.data.project.list() ?? []).slice(0, props.limit),
   )
 
+  // Dim summary line: how many rows are shown and how many of them are missing.
+  const summary = createMemo(() => {
+    const total = sessions().length
+    const missing = sessions().filter((s) => stale().get(s.location.directory) === false).length
+    const count = `${total} ${total === 1 ? "session" : "sessions"}`
+    return missing > 0 ? `${count} · ${missing} missing` : count
+  })
+
   // The distinct directories to check. Compared by value so a re-render that
   // does not change the set never re-runs the freshness check.
   const sessionDirectories = createMemo(
@@ -312,6 +320,12 @@ function SidebarHistory(props: {
         },
       },
       {
+        id: "session-history.filter.focus",
+        title: "Focus session filter",
+        bind: "/",
+        run: () => focusFilter(),
+      },
+      {
         id: "session-history.move-down",
         title: "Move highlight down",
         bind: "down",
@@ -369,16 +383,25 @@ function SidebarHistory(props: {
       height={props.align === "center" ? "100%" : undefined}
       justifyContent={props.align === "center" ? "center" : undefined}
     >
-      <text fg={context.theme.text.strong}>Session History</text>
-      <box>
-        <input
-          ref={(el) => {
-            inputRef = el
-          }}
-          placeholder="Filter by title, id, or project"
-          onMouseDown={focusFilter}
-          onInput={(v: string) => setQuery(v)}
-        />
+      <box flexDirection="column" border={["bottom"]} borderColor={context.theme.border?.base}>
+        <text fg={context.theme.text.strong}>Session History</text>
+        <box>
+          <input
+            ref={(el) => {
+              inputRef = el
+            }}
+            placeholder="Search  (/)"
+            backgroundColor={context.theme.background.formfield.base}
+            textColor={context.theme.text.formfield.base}
+            focusedBackgroundColor={context.theme.background.formfield.focused}
+            focusedTextColor={context.theme.text.formfield.focused}
+            cursorColor={context.theme.text.formfield.focused}
+            placeholderColor={context.theme.text.muted}
+            onMouseDown={focusFilter}
+            onInput={(v: string) => setQuery(v)}
+          />
+        </box>
+        <text fg={context.theme.text.feedback.warning.base}>{summary()}</text>
       </box>
       <Show
         when={sessions().length > 0}
@@ -397,6 +420,8 @@ function SidebarHistory(props: {
               return (
                 <box
                   flexDirection="column"
+                  border={["bottom"]}
+                  borderColor={context.theme.border?.base}
                   onMouseDown={() => onMouseDown(s.id)}
                   onMouseUp={() => onMouseUp(s.id, s.location.directory)}
                 >
@@ -410,7 +435,9 @@ function SidebarHistory(props: {
                     }
                   >
                     {label}
-                    {isStale() ? " · missing" : ""}
+                    {isStale() ? (
+                      <span style={{ fg: context.theme.text.feedback.error.base }}>{" ✗ missing"}</span>
+                    ) : null}
                   </text>
                   <Show when={props.showMetrics}>
                     <text fg={context.theme.text.muted}>
