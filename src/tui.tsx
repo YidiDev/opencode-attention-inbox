@@ -134,6 +134,7 @@ function HomeHistoryPanel(props: {
           limit={props.limit}
           showMetrics={props.showMetrics}
           showAllProjects={props.showAllProjects}
+          align="center"
         />
       </box>
     </Show>
@@ -145,6 +146,8 @@ function SidebarHistory(props: {
   limit: number
   showMetrics: boolean
   showAllProjects: boolean
+  /** Vertical placement of the whole block. The sidebar uses "top"; the home panel centers it. */
+  align?: "top" | "center"
 }) {
   const context = usePlugin()
   const [query, setQuery] = createSignal("")
@@ -337,7 +340,12 @@ function SidebarHistory(props: {
   }))
 
   return (
-    <box flexDirection="column" paddingX={1}>
+    <box
+      flexDirection="column"
+      paddingX={1}
+      height={props.align === "center" ? "100%" : undefined}
+      justifyContent={props.align === "center" ? "center" : undefined}
+    >
       <text fg={context.theme.text.strong}>Session History</text>
       <box>
         <input
