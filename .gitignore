@@ -1,0 +1,17 @@
+# Build output
+dist/
+*.tsbuildinfo
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Bun / npm
+node_modules/
+bun.lockb
+package-lock.json
+
+# Test
+coverage/
