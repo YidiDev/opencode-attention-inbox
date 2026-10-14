@@ -15,18 +15,15 @@ export default Plugin.define({
         if (!directory || typeof directory !== "string") {
           return { exists: false }
         }
-        // Path existence must be evaluated by the server; we do not assume
-        // any fs helper is exposed on `ctx`. Use the OpenCode project
-        // listing as a lightweight existence proxy: a directory that
-        // matches a known project root is considered alive. For non-project
-        // directories we fall back to a syntactic check and let the TUI
-        // re-query on demand.
+        // Path existence must be evaluated by the server. V2 Project.Info
+        // exposes `canonical` (the project root) but no top-level `directory`;
+        // we treat any session whose `location.directory` matches a known
+        // project root as alive. For non-project paths we conservatively
+        // return true and let the TUI re-query on session.updated events.
         const projects = await ctx.project.list()
-        if (projects.some((p) => p.directory === directory)) {
+        if (projects.some((p) => p.canonical === directory)) {
           return { exists: true }
         }
-        // Conservative: assume alive; the TUI will refresh on session.updated
-        // events. The RPC remains honest about project roots.
         return { exists: true }
       },
     })
