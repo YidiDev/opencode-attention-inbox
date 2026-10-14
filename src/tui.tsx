@@ -77,6 +77,7 @@ function SidebarHistory(props: {
   const context = usePlugin()
   const [query, setQuery] = createSignal("")
   const [stale, setStale] = createSignal<ReadonlyMap<string, boolean>>(new Map())
+  const [activeRow, setActiveRow] = createSignal<string | undefined>(undefined)
 
   // Reactive list of sessions, filtered by query and project scope.
   const sessions = createMemo(() => {
@@ -86,7 +87,7 @@ function SidebarHistory(props: {
     const currentRoot = currentProject?.directory
     const filtered = props.showAllProjects
       ? all
-      : all.filter((s) => s.location?.directory === currentRoot || projects.some((p) => p.canonical === s.location?.directory))
+      : all.filter((s) => s.location.directory === currentRoot || projects.some((p) => p.canonical === s.location.directory))
 
     const q = query().trim().toLowerCase()
     const searched = q
@@ -99,9 +100,9 @@ function SidebarHistory(props: {
 
     // Sort newest first, drop archived, cap to limit.
     return searched
-      .filter((s) => !s.time.archived || s.time.archived === 0)
+      .filter((s) => !s.time.archived)
       .slice()
-      .sort((a, b) => (b.time.updated ?? 0) - (a.time.updated ?? 0))
+      .sort((a, b) => b.time.updated - a.time.updated)
       .slice(0, props.limit)
   })
 
@@ -113,8 +114,7 @@ function SidebarHistory(props: {
     const rpc = context.client.rpc(SessionHistory)
     void Promise.all(
       rows.map(async (s) => {
-        const dir = s.location?.directory
-        if (!dir) return
+        const dir = s.location.directory
         if (cache.has(dir)) return
         try {
           const out = (await rpc.pathExists({ directory: dir })) as { exists: boolean }
@@ -130,8 +130,8 @@ function SidebarHistory(props: {
   })
 
   // Click handler: open in tab (preferred) or navigate when tabs are off.
-  const openSession = (sessionID: string, directory: string | undefined) => {
-    if (directory && stale().get(directory) === false) {
+  const activate = (sessionID: string, directory: string) => {
+    if (stale().get(directory) === false) {
       context.ui.toast.show({
         message: "Directory no longer exists",
         variant: "warning",
@@ -153,19 +153,56 @@ function SidebarHistory(props: {
     context.ui.router.navigate({ type: "session", sessionID })
   }
 
-  // Keymap: ctrl+b toggles the sidebar visibility through the CLI setting.
+  // OpenTUI click idiom: mousedown highlights, mouseup fires the action.
+  const onMouseDown = (sessionID: string) => setActiveRow(sessionID)
+  const onMouseUp = (sessionID: string, directory: string) => activate(sessionID, directory)
+
+  // Keymap: enter on highlighted row activates, esc clears.
   context.keymap.layer(() => ({
     mode: "base",
     commands: [
       {
-        id: "session-history.toggle-sidebar",
-        title: "Toggle Session History sidebar",
-        bind: "ctrl+b",
+        id: "session-history.activate",
+        title: "Open highlighted session",
+        bind: "return",
+        enabled: () => {
+          const id = activeRow()
+          if (!id) return false
+          const session = sessions().find((s) => s.id === id)
+          return Boolean(session)
+        },
         run: () => {
-          // Toggle by writing the `session.sidebar` setting via storage so
-          // the host re-reads it. The host owns the actual toggle; this is a
-          // best-effort shortcut that pairs with the panel.
-          void context.keymap.dispatch("app.toggleSidebar")
+          const id = activeRow()
+          if (!id) return
+          const session = sessions().find((s) => s.id === id)
+          if (!session) return
+          activate(session.id, session.location.directory)
+        },
+      },
+      {
+        id: "session-history.move-down",
+        title: "Move highlight down",
+        bind: "down",
+        run: () => {
+          const rows = sessions()
+          if (rows.length === 0) return
+          const i = rows.findIndex((s) => s.id === activeRow())
+          const next = i < 0 ? 0 : Math.min(i + 1, rows.length - 1)
+          const row = rows[next]
+          if (row) setActiveRow(row.id)
+        },
+      },
+      {
+        id: "session-history.move-up",
+        title: "Move highlight up",
+        bind: "up",
+        run: () => {
+          const rows = sessions()
+          if (rows.length === 0) return
+          const i = rows.findIndex((s) => s.id === activeRow())
+          const next = i < 0 ? rows.length - 1 : Math.max(i - 1, 0)
+          const row = rows[next]
+          if (row) setActiveRow(row.id)
         },
       },
     ],
@@ -176,7 +213,6 @@ function SidebarHistory(props: {
       <text fg={context.theme.text.strong}>Session History</text>
       <box>
         <input
-          value={query()}
           placeholder="Filter by title or id"
           onInput={(v: string) => setQuery(v)}
         />
@@ -192,18 +228,14 @@ function SidebarHistory(props: {
         <scrollbox flexDirection="column" maxHeight={20}>
           <For each={sessions()}>
             {(s) => {
-              const isStale = createMemo(() => {
-                const dir = s.location?.directory
-                return dir ? stale().get(dir) === false : false
-              })
-              const isActive = createMemo(() => props.activeSessionID === s.id)
+              const isStale = createMemo(() => stale().get(s.location.directory) === false)
+              const isActive = createMemo(() => props.activeSessionID === s.id || activeRow() === s.id)
               const label = s.title?.trim() || `session ${s.id.slice(0, 8)}`
-              const dir = s.location?.directory
               return (
                 <box
                   flexDirection="column"
-                  onMouseDown={() => openSession(s.id, dir)}
-                  onMouseUp={() => openSession(s.id, dir)}
+                  onMouseDown={() => onMouseDown(s.id)}
+                  onMouseUp={() => onMouseUp(s.id, s.location.directory)}
                 >
                   <text
                     fg={
@@ -219,7 +251,7 @@ function SidebarHistory(props: {
                   </text>
                   <Show when={props.showMetrics}>
                     <text fg={context.theme.text.muted}>
-                      {formatRelative(s.time.updated)} · ${(s.cost ?? 0).toFixed(2)}
+                      {formatRelative(s.time.updated)} · ${s.cost.toFixed(2)}
                     </text>
                   </Show>
                 </box>
