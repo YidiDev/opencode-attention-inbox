@@ -17,15 +17,24 @@
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.17",
-    "@opentui/solid": ">=0.5.17",
-    "solid-js": ">=1.9.0"
+    "@opentui/solid": "^0.5.17",
+    "solid-js": "^1.9.0"
   },
   "peerDependenciesMeta": {
-    "@opentui/core": { "optional": true },
-    "@opentui/solid": { "optional": true },
-    "solid-js": { "optional": true }
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@opentui/solid": "^0.5.17",
+    "@types/node": "^26.6.5",
+    "solid-js": "^1.9.12",
     "typescript": "^5.6.0"
   }
 }

@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "types": ["@opencode/plugin"]
+    "types": ["@opencode/plugin", "node"]
   },
   "include": ["src/**/*", "tests/**/*"]
 }

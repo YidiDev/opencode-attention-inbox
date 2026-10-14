@@ -29,11 +29,17 @@ export default Plugin.define({
     // because context.data.session.list() returns whatever is loaded.
 
     const stopCreated = context.data.on("session.created", () => {
-      // session.cause is part of the existing V2 sync; a refresh keeps the
-      // sidebar in sync without depending on internal store shapes.
+      // Session lifecycle event triggers a refresh. The data store is
+      // reactive and already reflects most fields; this just nudges the UI.
       void context.data.project.sync().catch(() => {})
     })
-    const stopUpdated = context.data.on("session.updated", () => {
+    const stopRenamed = context.data.on("session.renamed", () => {
+      void context.data.project.sync().catch(() => {})
+    })
+    const stopMetadataUpdated = context.data.on("session.metadata.updated", () => {
+      void context.data.project.sync().catch(() => {})
+    })
+    const stopUsageUpdated = context.data.on("session.usage.updated", () => {
       void context.data.project.sync().catch(() => {})
     })
     const stopDeleted = context.data.on("session.deleted", () => {
@@ -42,7 +48,9 @@ export default Plugin.define({
 
     onCleanup(() => {
       stopCreated()
-      stopUpdated()
+      stopRenamed()
+      stopMetadataUpdated()
+      stopUsageUpdated()
       stopDeleted()
     })
 
@@ -109,7 +117,7 @@ function SidebarHistory(props: {
         if (!dir) return
         if (cache.has(dir)) return
         try {
-          const out = await rpc.pathExists({ directory: dir })
+          const out = (await rpc.pathExists({ directory: dir })) as { exists: boolean }
           cache.set(dir, out.exists)
           mutated = true
         } catch {
