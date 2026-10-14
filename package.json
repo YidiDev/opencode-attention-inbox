@@ -34,6 +34,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun run tests/run.ts",
+    "audit": "bun audit",
     "prepublishOnly": "bun run typecheck && bun run tests/run.ts"
   },
   "dependencies": {
@@ -56,6 +57,7 @@
     }
   },
   "devDependencies": {
+    "@opencode/client": "2.0.31",
     "@opentui/solid": "^0.5.17",
     "@types/node": "^26.6.5",
     "solid-js": "^1.9.12",
