@@ -101,7 +101,7 @@ Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 ## Missing-directory behavior
 
-The TUI plugin asks the server, via the bundled `session-history.pathExists` RPC, whether each session's `location.directory` still exists. The server checks the real filesystem (`node:fs`), and **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session. Rows whose directory is gone are dimmed and suffixed `· missing`; clicking shows a warning toast instead of opening.
+The TUI plugin asks the server, via the bundled `session-history.check` RPC, which session directories no longer exist. One batched call covers every distinct directory, and it runs on the server (`node:fs`), so it also works against a remote server and for sessions from every project. It **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session. Rows whose directory is gone are dimmed and suffixed `· missing`; clicking shows a warning toast instead of opening.
 
 This is deliberately **not** called "deleted": a missing directory and a deleted session are different states. Deleted sessions are removed from the server and never reach the list.
 
@@ -120,7 +120,7 @@ bun run tests/run.ts
 ```
 src/
 ├── rpc.ts       # SessionHistory RPC contract
-├── index.ts     # Server plugin: registers pathExists
+├── index.ts     # Server plugin: registers the check RPC
 ├── sessions.ts  # Pure session list/filter helpers (unit-tested)
 └── tui.tsx      # CLI plugin: sidebar slot + filter + click + keymap
 tests/

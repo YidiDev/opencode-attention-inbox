@@ -1,9 +1,9 @@
 /**
- * Standalone contract test for the pathExists semantics. This does not
- * require the OpenCode runtime — it validates the input/output shape of
- * the RPC and the staleness cache contract used by the TUI plugin.
+ * Standalone contract test for the check RPC and the session-list helpers.
+ * This does not require the OpenCode runtime — it validates the input/output
+ * shape of the RPC and the pure selection helpers used by the TUI plugin.
  */
-import { SessionHistory, type SessionHistoryPathExistsInput, type SessionHistoryPathExistsOutput } from "../src/rpc.js"
+import { SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
 import { directoryExists } from "../src/directory.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
 import type { Project, SessionInfo } from "@opencode/client"
@@ -23,19 +23,19 @@ const def = SessionHistory as unknown as {
   id: string
   methods: Record<string, { input: object; output: object }>
 }
-const m = def.methods.pathExists
+const m = def.methods.check
 assert(def.id === "session-history", "rpc id is 'session-history'")
-assert(typeof m === "object" && m !== null, "pathExists method defined")
-assert(typeof m?.input === "object", "pathExists has input schema")
-assert(typeof m?.output === "object", "pathExists has output schema")
+assert(typeof m === "object" && m !== null, "check method defined")
+assert(typeof m?.input === "object", "check has input schema")
+assert(typeof m?.output === "object", "check has output schema")
 
 console.log("rpc.input")
-const sampleInput: SessionHistoryPathExistsInput = { directory: "/tmp/foo" }
-assert(typeof sampleInput.directory === "string", "input.directory is a string")
+const sampleInput: SessionHistoryCheckInput = { directories: ["/tmp/foo"] }
+assert(Array.isArray(sampleInput.directories), "input.directories is an array")
 
 console.log("rpc.output")
-const sampleOutput: SessionHistoryPathExistsOutput = { exists: true }
-assert(typeof sampleOutput.exists === "boolean", "output.exists is boolean")
+const sampleOutput: SessionHistoryCheckOutput = { missing: [] }
+assert(Array.isArray(sampleOutput.missing), "output.missing is an array")
 
 console.log("staleness.cache")
 const cache = new Map<string, boolean>()

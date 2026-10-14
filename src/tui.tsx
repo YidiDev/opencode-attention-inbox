@@ -2,7 +2,7 @@ import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { SessionInfo } from "@opencode/client"
 import type { InputRenderable } from "@opentui/core"
 import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
-import { SessionHistory } from "./rpc.js"
+import { SessionHistory, type SessionHistoryCheckOutput } from "./rpc.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
 
 /**
@@ -205,37 +205,59 @@ function SidebarHistory(props: {
     stopMetadata()
   })
 
-  // Reactive list of sessions, filtered by query and project scope.
-  const sessions = createMemo(() => {
+  // Sessions before the query and row limit are applied — the freshness check
+  // needs every directory, not just the visible rows.
+  const allSessions = createMemo(() => {
     const cached = context.data.session.list() ?? []
     const scoped = props.showAllProjects
       ? cached
       : scopeToCurrentProject(cached, context.data.location.default()?.directory, context.data.project.list() ?? [])
-    const base = props.showAllProjects ? mergeSessions(remote(), scoped) : scoped
-    return filterSessions(base, query(), context.data.project.list() ?? []).slice(0, props.limit)
+    return props.showAllProjects ? mergeSessions(remote(), scoped) : scoped
   })
 
-  // Freshness pass: ask the server which session directories still exist.
+  // Reactive list of sessions, filtered by query and project scope.
+  const sessions = createMemo(() =>
+    filterSessions(allSessions(), query(), context.data.project.list() ?? []).slice(0, props.limit),
+  )
+
+  // The distinct directories to check. Compared by value so a re-render that
+  // does not change the set never re-runs the freshness check.
+  const sessionDirectories = createMemo(
+    () => [...new Set(allSessions().map((s) => s.location.directory))].sort(),
+    [],
+    { equals: (a, b) => a.length === b.length && a.every((directory, index) => directory === b[index]) },
+  )
+
+  // Freshness pass: one batched RPC at this location reports which session
+  // directories are gone on the server. It runs server-side, so it also holds
+  // for a remote server and covers sessions from every project.
+  const [checkTick, setCheckTick] = createSignal(0)
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => {
+    if (retryTimer !== undefined) clearTimeout(retryTimer)
+  })
+
   createEffect(() => {
-    const rows = sessions()
-    const cache = new Map(stale())
-    let mutated = false
+    checkTick() // re-run dependency for retries
+    const directories = sessionDirectories()
+    if (directories.length === 0) {
+      setStale(new Map())
+      return
+    }
     const rpc = context.client.rpc(SessionHistory)
-    void Promise.all(
-      rows.map(async (s) => {
-        const dir = s.location.directory
-        if (cache.has(dir)) return
-        try {
-          const out = (await rpc.pathExists({ directory: dir })) as { exists: boolean }
-          cache.set(dir, out.exists)
-          mutated = true
-        } catch {
-          cache.set(dir, true) // fail-open; let user retry
-        }
-      }),
-    ).then(() => {
-      if (mutated) setStale(new Map(cache))
-    })
+    const location = context.location ?? context.data.location.default()
+    void rpc
+      .check({ directories }, { location })
+      .then((result) => {
+        const missing = new Set((result as SessionHistoryCheckOutput).missing)
+        setStale(new Map(directories.map((directory) => [directory, !missing.has(directory)])))
+      })
+      .catch(() => {
+        // Fail open (no row dimmed) and retry shortly: a transient
+        // `rpc.unavailable` while the location activates must not stick.
+        if (retryTimer !== undefined) clearTimeout(retryTimer)
+        retryTimer = setTimeout(() => setCheckTick((n) => n + 1), 2000)
+      })
   })
 
   // Click handler: open in tab (preferred) or navigate when tabs are off.
