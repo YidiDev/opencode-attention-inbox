@@ -15,10 +15,10 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
   - If the session is already open in a tab → focus that tab.
   - Otherwise → open a new tab and focus it.
   - When session tabs are disabled → falls back to `router.navigate({ type: "session" })`.
-- Sessions whose working directory is gone on the server are dimmed and shown
-  with a "· missing" suffix; clicking shows a warning toast instead of opening.
-  This is distinct from a *deleted* session (the record itself), which never
-  appears in the list.
+- Sessions whose working directory is gone on the server are dimmed and marked
+  with a red `✗ missing`. Clicking one warns first (a short, dismissible toast
+  that never navigates); clicking it again opens it anyway. This is distinct
+  from a *deleted* session (the record itself), which never appears in the list.
 - Subscribes to `session.created` / `session.updated` / `session.deleted` for live refresh.
 
 ## Installation
@@ -101,7 +101,9 @@ Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 ## Missing-directory behavior
 
-The TUI plugin asks the server, via the bundled `session-history.check` RPC, which session directories no longer exist. One batched call covers every distinct directory, and it runs on the server (`node:fs`), so it also works against a remote server and for sessions from every project. It **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session. Rows whose directory is gone are dimmed and suffixed `· missing`; clicking shows a warning toast instead of opening.
+The TUI plugin asks the server, via the bundled `session-history.check` RPC, which session directories no longer exist. One batched call covers every distinct directory, and it runs on the server (`node:fs`), so it also works against a remote server and for sessions from every project. It **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session.
+
+Rows whose directory is gone are dimmed and marked with a red `✗ missing`. Activating one (click or Enter) warns first instead of opening: a 3-second, dismissible toast that never navigates. Activating the same row again within a few seconds opens it anyway — the CLI then handles the missing directory itself. The warning state resets on a timer and whenever the filter changes.
 
 This is deliberately **not** called "deleted": a missing directory and a deleted session are different states. Deleted sessions are removed from the server and never reach the list.
 

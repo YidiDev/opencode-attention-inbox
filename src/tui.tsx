@@ -2,7 +2,7 @@ import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { SessionInfo } from "@opencode/client"
 import type { InputRenderable } from "@opentui/core"
 import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
-import { SessionHistory, type SessionHistoryCheckOutput } from "./rpc.js"
+import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckOutput } from "./rpc.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
 
 /**
@@ -13,15 +13,17 @@ import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCur
  *    `options.showAllProjects` is false it is scoped to the current project.
  *  - Search box filters by title, id, project, or directory. OpenCode's
  *    renderer disables click-to-focus and the slot host does not focus plugin
- *    content, so the field is focused on click or with "/"; escape clears the
- *    query, then blurs back to the prompt.
+ *    content, so the field is focused on click; escape clears the query, then
+ *    blurs back to the prompt. Arrow/Enter navigation is scoped to the field so
+ *    the prompt keeps those keys.
  *  - Click/Enter on a row: if the session is already open in a tab, focus
  *    it; otherwise open + focus the tab. When tabs are disabled, fall back
  *    to router.navigate({ type: "session" }).
  *  - Sessions whose working directory is gone on the server are dimmed and
- *    marked "✗ missing" in red; clicking shows a warning toast instead of
- *    opening. This is not "deleted" — that is a different state (the session
- *    record itself), which never appears in the list.
+ *    marked "✗ missing" in red. Activating one warns first (a dismissible 3s
+ *    toast that never navigates); activating it again opens it anyway. This is
+ *    not "deleted" — that is a different state (the session record itself),
+ *    which never appears in the list.
  *
  * Cross-project listing: `context.data.session.list()` only reflects the
  * sessions the CLI has already cached (mostly the current location), so when
@@ -155,6 +157,9 @@ function SidebarHistory(props: {
   const [stale, setStale] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [activeRow, setActiveRow] = createSignal<string | undefined>(undefined)
   const [remote, setRemote] = createSignal<readonly SessionInfo[]>([])
+  // Session the user has already been warned about; activating it again opens
+  // it anyway (see `activate`).
+  const [pendingOpen, setPendingOpen] = createSignal<string | undefined>(undefined)
 
   // The filter input is focused explicitly. OpenCode's renderer disables
   // click-to-focus (autoFocus: false) and the slot host does not focus plugin
@@ -247,7 +252,7 @@ function SidebarHistory(props: {
 
   createEffect(() => {
     checkTick() // re-run dependency for retries
-    const directories = sessionDirectories()
+    const directories = sessionDirectories().slice(0, MAX_DIRECTORIES)
     if (directories.length === 0) {
       setStale(new Map())
       return
@@ -268,17 +273,39 @@ function SidebarHistory(props: {
       })
   })
 
+  // Warn-once state for missing rows: activating the same row again opens it
+  // anyway. Cleared on a timer and whenever the filter changes.
+  let pendingTimer: ReturnType<typeof setTimeout> | undefined
+  const markPendingOpen = (sessionID: string) => {
+    setPendingOpen(sessionID)
+    if (pendingTimer !== undefined) clearTimeout(pendingTimer)
+    pendingTimer = setTimeout(() => setPendingOpen(undefined), 5000)
+  }
+  onCleanup(() => {
+    if (pendingTimer !== undefined) clearTimeout(pendingTimer)
+  })
+  createEffect(() => {
+    query()
+    setPendingOpen(undefined)
+  })
+
   // Click handler: open in tab (preferred) or navigate when tabs are off.
+  //
+  // A session whose directory is gone warns first: the toast is a plain,
+  // dismissible notification (no `sessionID`, so the CLI does not attach its
+  // "Open" action), and activating the same row again opens it anyway.
   const activate = (sessionID: string, directory: string) => {
     blurFilter()
-    if (stale().get(directory) === false) {
+    if (stale().get(directory) === false && pendingOpen() !== sessionID) {
+      markPendingOpen(sessionID)
       context.ui.toast.show({
-        message: "Directory missing",
+        message: "Directory missing — click again to open anyway",
         variant: "warning",
-        sessionID,
+        duration: 3000,
       })
       return
     }
+    setPendingOpen(undefined)
     if (context.ui.tabs.enabled()) {
       const list = context.ui.tabs.list()
       const existing = list.find((t) => t.sessionID === sessionID)
@@ -297,9 +324,14 @@ function SidebarHistory(props: {
   const onMouseDown = (sessionID: string) => setActiveRow(sessionID)
   const onMouseUp = (sessionID: string, directory: string) => activate(sessionID, directory)
 
-  // Keymap: enter on highlighted row activates, esc clears.
+  // Keymap: while the search field is focused, Enter opens the highlighted row
+  // and the arrows move the highlight. Scoped to the field (`target`) so the
+  // prompt keeps Enter, the arrows and "/" — an unscoped layer here would
+  // intercept them and the prompt could not submit.
   context.keymap.layer(() => ({
     mode: "base",
+    target: () => inputRef,
+    priority: 1,
     commands: [
       {
         id: "session-history.activate",
@@ -318,12 +350,6 @@ function SidebarHistory(props: {
           if (!session) return
           activate(session.id, session.location.directory)
         },
-      },
-      {
-        id: "session-history.filter.focus",
-        title: "Focus session filter",
-        bind: "/",
-        run: () => focusFilter(),
       },
       {
         id: "session-history.move-down",
@@ -351,16 +377,6 @@ function SidebarHistory(props: {
           if (row) setActiveRow(row.id)
         },
       },
-    ],
-  }))
-
-  // Scoped to the filter input: escape clears the query, then blurs back to
-  // the prompt. Scoping keeps it from shadowing the global escape binding.
-  context.keymap.layer(() => ({
-    mode: "base",
-    target: () => inputRef,
-    priority: 1,
-    commands: [
       {
         id: "session-history.filter.dismiss",
         title: "Clear session filter",
@@ -390,7 +406,7 @@ function SidebarHistory(props: {
             ref={(el) => {
               inputRef = el
             }}
-            placeholder="Search  (/)"
+            placeholder="Search"
             backgroundColor={context.theme.background.formfield.base}
             textColor={context.theme.text.formfield.base}
             focusedBackgroundColor={context.theme.background.formfield.focused}
