@@ -3,7 +3,7 @@ import type { SessionInfo } from "@opencode/client"
 import type { InputRenderable } from "@opentui/core"
 import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
 import { SessionHistory } from "./rpc.js"
-import { filterSessions, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
+import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
 
 /**
  * CLI plugin: append a Session History panel into the built-in sidebar.
@@ -65,7 +65,7 @@ export default Plugin.define({
       stopDeleted()
     })
 
-    return context.ui.slot({
+    const disposeSidebar = context.ui.slot({
       append: "sidebar.content",
       render: (input) => (
         <SidebarHistory
@@ -76,11 +76,69 @@ export default Plugin.define({
         />
       ),
     })
+
+    // The CLI only renders a sidebar inside the session route, so the same
+    // list is surfaced on the home screen through the global `app` slot.
+    const disposeHome = context.ui.slot({
+      append: "app",
+      render: () => (
+        <HomeHistoryPanel limit={limit} showMetrics={showMetrics} showAllProjects={showAllProjects} />
+      ),
+    })
+
+    return () => {
+      disposeSidebar()
+      disposeHome()
+    }
   },
 })
 
 const PAGE_SIZE = 100
 const MAX_FETCH = 500
+
+/**
+ * Home-screen session panel. The CLI renders the sidebar only inside the
+ * session route, so on the home route we mount the same list into the global
+ * `app` slot as an overlay pinned to the right margin. The width is derived so
+ * it never covers the centered home content; below that it stays hidden.
+ */
+function HomeHistoryPanel(props: {
+  limit: number
+  showMetrics: boolean
+  showAllProjects: boolean
+}) {
+  const context = usePlugin()
+  const [terminalWidth, setTerminalWidth] = createSignal(context.renderer.terminalWidth)
+
+  // The renderer width is a plain getter, so track resizes to show/hide the
+  // panel as the terminal grows or shrinks.
+  const onResize = () => setTerminalWidth(context.renderer.terminalWidth)
+  context.renderer.on("resize", onResize)
+  onCleanup(() => context.renderer.off("resize", onResize))
+
+  const panelWidth = createMemo(() => homePanelWidth(terminalWidth()))
+  const visible = createMemo(() => panelWidth() > 0 && context.ui.router.current().type === "home")
+
+  return (
+    <Show when={visible()}>
+      <box
+        position="absolute"
+        top={0}
+        right={0}
+        height="100%"
+        width={panelWidth()}
+        backgroundColor={context.theme.background?.raised?.base}
+      >
+        <SidebarHistory
+          activeSessionID={undefined}
+          limit={props.limit}
+          showMetrics={props.showMetrics}
+          showAllProjects={props.showAllProjects}
+        />
+      </box>
+    </Show>
+  )
+}
 
 function SidebarHistory(props: {
   activeSessionID: string | undefined

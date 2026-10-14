@@ -6,6 +6,8 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 - Sidebar panel that lists sessions across every project, newest-first (or
   scoped to the current project with `showAllProjects: false`).
+- Also shown on the home screen (before any session is open) as a right-hand
+  panel, width permitting — the CLI's own sidebar only exists inside a session.
 - Search filter by title, id, project, or directory. Click the field to focus
   it (OpenCode does not focus plugin content automatically); `escape` clears
   the query, then blurs back to the prompt.

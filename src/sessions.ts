@@ -71,3 +71,20 @@ export function projectLabel(directory: string): string {
   const parts = directory.split("/").filter(Boolean)
   return parts.at(-1) ?? directory
 }
+
+/** Width the CLI gives its session sidebar, so the home panel matches it. */
+export const HOME_PANEL_MAX_WIDTH = 42
+/** Horizontal budget the centered home screen needs (prompt `maxWidth` 75 + margin). */
+export const HOME_CONTENT_WIDTH = 76
+/** Narrower than this and a panel is not worth the space. */
+export const HOME_PANEL_MIN_WIDTH = 22
+
+/**
+ * Width of the session panel shown on the home screen, or 0 when it would
+ * overlap the centered home content. The CLI centers that content in the full
+ * frame, so the panel can only occupy the right margin: `(width - content) / 2`.
+ */
+export function homePanelWidth(terminalWidth: number): number {
+  const width = Math.min(HOME_PANEL_MAX_WIDTH, Math.floor((terminalWidth - HOME_CONTENT_WIDTH) / 2))
+  return width >= HOME_PANEL_MIN_WIDTH ? width : 0
+}

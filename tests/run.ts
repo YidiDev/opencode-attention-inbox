@@ -4,7 +4,7 @@
  * the RPC and the staleness cache contract used by the TUI plugin.
  */
 import { SessionHistory, type SessionHistoryPathExistsInput, type SessionHistoryPathExistsOutput } from "../src/rpc.js"
-import { filterSessions, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
+import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
 import type { Project, SessionInfo } from "@opencode/client"
 
 let failures = 0
@@ -117,6 +117,18 @@ assert(
   "matches project canonical root",
 )
 assert(filterSessions(rows, "alpha", []).length === 1, "falls back to directory-only when no projects given")
+
+console.log("sessions.homePanel")
+assert(homePanelWidth(100) === 0, "hidden when the terminal is too narrow")
+assert(homePanelWidth(120) === 22, "narrowest usable panel")
+assert(homePanelWidth(200) === 42, "caps at the sidebar width")
+assert(
+  [120, 140, 160, 200, 240].every((w) => {
+    const panel = homePanelWidth(w)
+    return panel === 0 || w - panel >= (w + 75) / 2 // panel left edge >= centered content right edge
+  }),
+  "panel never overlaps the centered home content",
+)
 
 console.log("sessions.label")
 assert(projectLabel("/Users/me/repos/alpha") === "alpha", "label is last path segment")
