@@ -1,13 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": "./src/index.ts",
   "plugins": [
     {
-      "package": ".",
+      "package": "./src",
       "options": {
         "limit": 100,
         "showMetrics": true,
-        "showAllProjects": false
+        "showAllProjects": true
       }
     }
   ]
