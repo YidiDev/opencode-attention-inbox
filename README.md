@@ -4,8 +4,11 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 ## Features
 
-- Sidebar panel that lists sessions newest-first (or all projects, by option).
-- Search filter by title or id.
+- Sidebar panel that lists sessions across every project, newest-first (or
+  scoped to the current project with `showAllProjects: false`).
+- Search filter by title, id, project, or directory. Click the field to focus
+  it (OpenCode does not focus plugin content automatically); `escape` clears
+  the query, then blurs back to the prompt.
 - Click-to-resume:
   - If the session is already open in a tab → focus that tab.
   - Otherwise → open a new tab and focus it.
@@ -15,22 +18,58 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 ## Installation
 
-This plugin is meant to live in your project as `.opencode/plugin/session-history/` or be loaded via the `plugins` field of `opencode.jsonc`.
+Requires **OpenCode V2**.
+
+### From npm
+
+```sh
+opencode plugin add opencode-session-history
+```
+
+Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "opencode-session-history",
+      "options": {
+        "limit": 100,
+        "showMetrics": true,
+        "showAllProjects": true
+      }
+    }
+  ]
+}
+```
+
+The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
+
+### From GitHub
+
+```jsonc
+{
+  "plugins": ["github:ypxcs/opencode-session-history"]
+}
+```
+
+Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 ### As a project-local plugin
 
-1. Copy this directory to `.opencode/plugin/session-history/` in your project.
-2. Add the plugin to your `opencode.jsonc` (or `~/.config/opencode/opencode.jsonc`):
+1. Copy this directory to `.opencode/plugins/session-history/` in your project (V2 discovers `index.ts` + `tui.ts` package directories there automatically).
+2. Or reference it explicitly:
 
    ```jsonc
    {
      "plugins": [
        {
-         "package": "./.opencode/plugin/session-history",
+         "package": "./src",
          "options": {
            "limit": 100,
            "showMetrics": true,
-           "showAllProjects": false
+           "showAllProjects": true
          }
        }
      ]
@@ -43,7 +82,7 @@ This plugin is meant to live in your project as `.opencode/plugin/session-histor
 | ------------------ | --------- | ------- | --------------------------------------------------------------- |
 | `limit`            | `number`  | `100`   | Maximum number of rows shown.                                   |
 | `showMetrics`      | `boolean` | `true`  | Show "Xm ago · $Y.YY" line under the title.                    |
-| `showAllProjects`  | `boolean` | `false` | When true, list sessions from every project, not just current.  |
+| `showAllProjects`  | `boolean` | `true`  | When true, list sessions from every project, not just the current one. When false, only the current project's sessions are shown. |
 
 ## Requirements
 
@@ -73,12 +112,18 @@ bun run tests/run.ts
 
 ```
 src/
-├── rpc.ts      # SessionHistory RPC contract
-├── index.ts    # Server plugin: registers pathExists
-└── tui.tsx     # CLI plugin: sidebar slot + click + keymap
+├── rpc.ts       # SessionHistory RPC contract
+├── index.ts     # Server plugin: registers pathExists
+├── sessions.ts  # Pure session list/filter helpers (unit-tested)
+└── tui.tsx      # CLI plugin: sidebar slot + filter + click + keymap
 tests/
-└── run.ts      # RPC contract + cache invariant tests
+└── run.ts       # RPC contract + session helper tests
 ```
+
+## Reporting bugs
+
+- Bugs and feature requests: <https://github.com/ypxcs/opencode-session-history/issues>
+- Security issues: report privately, **not** in a public issue — see [SECURITY.md](./SECURITY.md).
 
 ## License
 

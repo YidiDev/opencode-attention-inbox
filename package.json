@@ -4,13 +4,37 @@
   "description": "OpenCode V2 CLI plugin: a sidebar session-history panel with click-to-resume.",
   "type": "module",
   "license": "MIT",
+  "author": "ypxcs",
+  "homepage": "https://github.com/ypxcs/opencode-session-history#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ypxcs/opencode-session-history.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ypxcs/opencode-session-history/issues"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "plugin",
+    "tui",
+    "sessions",
+    "history"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./tui": "./src/tui.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun run tests/run.ts",
+    "prepublishOnly": "bun run typecheck && bun run tests/run.ts"
   },
   "dependencies": {
     "@opencode/plugin": "2.0.31"
