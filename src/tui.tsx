@@ -1,27 +1,38 @@
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
+import type { SessionInfo } from "@opencode/client"
+import type { InputRenderable } from "@opentui/core"
 import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
 import { SessionHistory } from "./rpc.js"
+import { filterSessions, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
 
 /**
  * CLI plugin: append a Session History panel into the built-in sidebar.
  *
  * Behavior:
- *  - Lists sessions for the current project (or all projects when
- *    `options.showAllProjects` is true), newest first.
- *  - Search box filters by title and id.
+ *  - Lists sessions across every project, newest first, by default. When
+ *    `options.showAllProjects` is false it is scoped to the current project.
+ *  - Search box filters by title and id. OpenCode's renderer disables
+ *    click-to-focus and the slot host does not focus plugin content, so the
+ *    field is focused explicitly on click; escape clears the query, then
+ *    blurs back to the prompt.
  *  - Click/Enter on a row: if the session is already open in a tab, focus
  *    it; otherwise open + focus the tab. When tabs are disabled, fall back
  *    to router.navigate({ type: "session" }).
  *  - Stale sessions (working directory missing on the server) are dimmed,
  *    show a "directory missing" suffix, and clicking shows a warning toast
  *    without navigating.
+ *
+ * Cross-project listing: `context.data.session.list()` only reflects the
+ * sessions the CLI has already cached (mostly the current location), so when
+ * listing all projects we also page the full server index via
+ * `context.client.session.list({})` and merge the reactive cache on top.
  */
 export default Plugin.define({
   id: "session-history",
   setup(context) {
     const limit = (context.options.limit as number | undefined) ?? 100
     const showMetrics = (context.options.showMetrics as boolean | undefined) ?? true
-    const showAllProjects = (context.options.showAllProjects as boolean | undefined) ?? false
+    const showAllProjects = (context.options.showAllProjects as boolean | undefined) ?? true
 
     // Ensure project + session stores are populated.
     void context.data.project.sync().catch(() => {})
@@ -68,6 +79,9 @@ export default Plugin.define({
   },
 })
 
+const PAGE_SIZE = 100
+const MAX_FETCH = 500
+
 function SidebarHistory(props: {
   activeSessionID: string | undefined
   limit: number
@@ -78,32 +92,65 @@ function SidebarHistory(props: {
   const [query, setQuery] = createSignal("")
   const [stale, setStale] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [activeRow, setActiveRow] = createSignal<string | undefined>(undefined)
+  const [remote, setRemote] = createSignal<readonly SessionInfo[]>([])
+
+  // The filter input is focused explicitly. OpenCode's renderer disables
+  // click-to-focus (autoFocus: false) and the slot host does not focus plugin
+  // content, so an unfocused <input> never receives keystrokes. Focus it on
+  // click and leave it with escape so it never steals focus from the prompt.
+  let inputRef: InputRenderable | undefined
+  const focusFilter = () => inputRef?.focus()
+  const blurFilter = () => inputRef?.blur()
+
+  // Full cross-project index from the server. The reactive store only holds
+  // what the CLI has cached, so page the server list to enumerate every
+  // project's sessions (newest first, top-level only).
+  const loadAll = async () => {
+    if (!props.showAllProjects) return
+    const collected: SessionInfo[] = []
+    let cursor: string | undefined
+    do {
+      const page = await context.client.session.list({
+        order: "desc",
+        limit: PAGE_SIZE,
+        parentID: null,
+        ...(cursor === undefined ? {} : { cursor }),
+      })
+      collected.push(...page.data)
+      cursor = page.cursor.next ?? undefined
+    } while (cursor !== undefined && collected.length < MAX_FETCH)
+    setRemote(collected)
+  }
+
+  // Refresh the index when the set of sessions changes (debounced).
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  const scheduleRefresh = () => {
+    if (!props.showAllProjects) return
+    if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => void loadAll().catch(() => {}), 250)
+  }
+  void loadAll().catch(() => {})
+
+  const stopCreated = context.data.on("session.created", scheduleRefresh)
+  const stopDeleted = context.data.on("session.deleted", scheduleRefresh)
+  const stopRenamed = context.data.on("session.renamed", scheduleRefresh)
+  const stopMetadata = context.data.on("session.metadata.updated", scheduleRefresh)
+  onCleanup(() => {
+    if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+    stopCreated()
+    stopDeleted()
+    stopRenamed()
+    stopMetadata()
+  })
 
   // Reactive list of sessions, filtered by query and project scope.
   const sessions = createMemo(() => {
-    const all = context.data.session.list() ?? []
-    const projects = context.data.project.list() ?? []
-    const currentProject = context.data.location.default()
-    const currentRoot = currentProject?.directory
-    const filtered = props.showAllProjects
-      ? all
-      : all.filter((s) => s.location.directory === currentRoot || projects.some((p) => p.canonical === s.location.directory))
-
-    const q = query().trim().toLowerCase()
-    const searched = q
-      ? filtered.filter((s) => {
-          const title = (s.title ?? "").toLowerCase()
-          const id = s.id.toLowerCase()
-          return title.includes(q) || id.includes(q)
-        })
-      : filtered
-
-    // Sort newest first, drop archived, cap to limit.
-    return searched
-      .filter((s) => !s.time.archived)
-      .slice()
-      .sort((a, b) => b.time.updated - a.time.updated)
-      .slice(0, props.limit)
+    const cached = context.data.session.list() ?? []
+    const scoped = props.showAllProjects
+      ? cached
+      : scopeToCurrentProject(cached, context.data.location.default()?.directory, context.data.project.list() ?? [])
+    const base = props.showAllProjects ? mergeSessions(remote(), scoped) : scoped
+    return filterSessions(base, query(), context.data.project.list() ?? []).slice(0, props.limit)
   })
 
   // Freshness pass: ask the server which session directories still exist.
@@ -131,6 +178,7 @@ function SidebarHistory(props: {
 
   // Click handler: open in tab (preferred) or navigate when tabs are off.
   const activate = (sessionID: string, directory: string) => {
+    blurFilter()
     if (stale().get(directory) === false) {
       context.ui.toast.show({
         message: "Directory no longer exists",
@@ -208,12 +256,38 @@ function SidebarHistory(props: {
     ],
   }))
 
+  // Scoped to the filter input: escape clears the query, then blurs back to
+  // the prompt. Scoping keeps it from shadowing the global escape binding.
+  context.keymap.layer(() => ({
+    mode: "base",
+    target: () => inputRef,
+    priority: 1,
+    commands: [
+      {
+        id: "session-history.filter.dismiss",
+        title: "Clear session filter",
+        bind: "escape",
+        run: () => {
+          if (query()) {
+            setQuery("")
+            return
+          }
+          blurFilter()
+        },
+      },
+    ],
+  }))
+
   return (
     <box flexDirection="column" paddingX={1}>
       <text fg={context.theme.text.strong}>Session History</text>
       <box>
         <input
-          placeholder="Filter by title or id"
+          ref={(el) => {
+            inputRef = el
+          }}
+          placeholder="Filter by title, id, or project"
+          onMouseDown={focusFilter}
           onInput={(v: string) => setQuery(v)}
         />
       </box>
@@ -251,6 +325,7 @@ function SidebarHistory(props: {
                   </text>
                   <Show when={props.showMetrics}>
                     <text fg={context.theme.text.muted}>
+                      {props.showAllProjects ? `${projectLabel(s.location.directory)} · ` : ""}
                       {formatRelative(s.time.updated)} · ${s.cost.toFixed(2)}
                     </text>
                   </Show>

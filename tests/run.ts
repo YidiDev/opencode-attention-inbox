@@ -4,6 +4,8 @@
  * the RPC and the staleness cache contract used by the TUI plugin.
  */
 import { SessionHistory, type SessionHistoryPathExistsInput, type SessionHistoryPathExistsOutput } from "../src/rpc.js"
+import { filterSessions, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
+import type { Project, SessionInfo } from "@opencode/client"
 
 let failures = 0
 function assert(cond: unknown, msg: string) {
@@ -41,6 +43,84 @@ cache.set("/b", false)
 assert(cache.get("/a") === true, "alive row resolves true")
 assert(cache.get("/b") === false, "missing row resolves false")
 assert(!cache.has("/c"), "untouched row absent from cache")
+
+// --- session list selection -------------------------------------------------
+
+function row(
+  id: string,
+  directory: string,
+  updated: number,
+  extra: Partial<{ title: string; parentID: string; archived: number }> = {},
+): SessionInfo {
+  const { title, parentID, archived } = extra
+  return {
+    id,
+    title: title ?? id,
+    parentID,
+    cost: 0,
+    location: { directory },
+    time: { created: updated, updated, archived },
+  } as unknown as SessionInfo
+}
+
+console.log("sessions.scope")
+const scoped = scopeToCurrentProject(
+  [row("a", "/work/alpha", 3), row("b", "/work/beta", 2), row("c", "/other/gamma", 1)],
+  "/work/alpha",
+  [{ canonical: "/work/beta" } as unknown as Project],
+)
+assert(scoped.map((s) => s.id).join(",") === "a,b", "keeps current dir and known project roots")
+assert(scoped.every((s) => s.id !== "c"), "drops unknown project")
+
+console.log("sessions.merge")
+const remote = [row("a", "/work/alpha", 3, { title: "remote-a" }), row("d", "/work/delta", 4)]
+const cachedRow = row("a", "/work/alpha", 9, { title: "live-a" })
+const merged = mergeSessions(remote, [cachedRow])
+assert(merged.length === 2, "dedupes by id")
+assert(merged.find((s) => s.id === "a")?.title === "live-a", "reactive cache wins over remote")
+assert(merged.some((s) => s.id === "d"), "remote-only sessions kept")
+
+console.log("sessions.filter")
+const filtered = filterSessions(
+  [
+    row("old", "/work/alpha", 1),
+    row("new", "/work/beta", 5),
+    row("child", "/work/alpha", 6, { parentID: "new" }),
+    row("archived", "/work/alpha", 7, { archived: 7 }),
+    row("mid", "/work/alpha", 3, { title: "Deploy pipeline" }),
+  ],
+  "",
+)
+assert(filtered.map((s) => s.id).join(",") === "new,mid,old", "newest first, drops children and archived")
+const searched = filterSessions([row("x", "/w", 1, { title: "Refactor auth" }), row("y", "/w", 2)], "auth")
+assert(searched.length === 1 && searched[0]?.id === "x", "search matches title")
+const byId = filterSessions([row("ses_abc", "/w", 1), row("z", "/w", 2)], "ABC")
+assert(byId.length === 1 && byId[0]?.id === "ses_abc", "search matches id, case-insensitive")
+
+console.log("sessions.filter.project")
+const proj = [
+  { id: "p1", canonical: "/work/alpha" } as unknown as Project,
+  { id: "p2", canonical: "/work/root", name: "Billing" } as unknown as Project,
+]
+const rows = [
+  row("a", "/work/alpha/sub", 1), // working dir is a subpath of project p1
+  { ...row("b", "/tmp/wt/feat", 2), projectID: "p2" } as unknown as SessionInfo, // worktree: dir differs from project root
+  { ...row("c", "/elsewhere", 3), projectID: "p3" } as unknown as SessionInfo,
+]
+assert(filterSessions(rows, "alpha", proj).map((s) => s.id).join(",") === "a", "matches working directory")
+assert(
+  filterSessions(rows, "billing", proj).map((s) => s.id).join(",") === "b",
+  "matches project name via projectID even when the working dir differs",
+)
+assert(
+  filterSessions(rows, "work/root", proj).map((s) => s.id).join(",") === "b",
+  "matches project canonical root",
+)
+assert(filterSessions(rows, "alpha", []).length === 1, "falls back to directory-only when no projects given")
+
+console.log("sessions.label")
+assert(projectLabel("/Users/me/repos/alpha") === "alpha", "label is last path segment")
+assert(projectLabel("/") === "/", "root path falls back to itself")
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`)
