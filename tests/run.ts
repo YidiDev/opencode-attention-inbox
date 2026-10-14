@@ -4,6 +4,7 @@
  * the RPC and the staleness cache contract used by the TUI plugin.
  */
 import { SessionHistory, type SessionHistoryPathExistsInput, type SessionHistoryPathExistsOutput } from "../src/rpc.js"
+import { directoryExists } from "../src/directory.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
 import type { Project, SessionInfo } from "@opencode/client"
 
@@ -133,6 +134,12 @@ assert(
 console.log("sessions.label")
 assert(projectLabel("/Users/me/repos/alpha") === "alpha", "label is last path segment")
 assert(projectLabel("/") === "/", "root path falls back to itself")
+
+console.log("directory.exists")
+assert((await directoryExists(process.cwd())) === true, "existing directory resolves true")
+assert((await directoryExists("/no/such/dir/opencode-session-history")) === false, "missing directory resolves false")
+assert((await directoryExists("")) === false, "empty path resolves false")
+assert((await directoryExists(undefined)) === false, "non-string path resolves false")
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`)

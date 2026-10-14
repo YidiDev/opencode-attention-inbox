@@ -15,7 +15,10 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
   - If the session is already open in a tab → focus that tab.
   - Otherwise → open a new tab and focus it.
   - When session tabs are disabled → falls back to `router.navigate({ type: "session" })`.
-- Stale sessions (directory missing on the server) are dimmed with a "·" prefix and show a warning toast on click instead of navigating.
+- Sessions whose working directory is gone on the server are dimmed and shown
+  with a "· missing" suffix; clicking shows a warning toast instead of opening.
+  This is distinct from a *deleted* session (the record itself), which never
+  appears in the list.
 - Subscribes to `session.created` / `session.updated` / `session.deleted` for live refresh.
 
 ## Installation
@@ -96,11 +99,13 @@ Pin a revision with `#<commit>` (or `#main`) for reproducibility.
   ```
   When tabs are `auto` / `off`, the click handler uses `router.navigate` instead, which replaces the current session view.
 
-## Stale-session behavior
+## Missing-directory behavior
 
-The TUI plugin asks the server via the bundled `session-history.pathExists` RPC whether each session's `location.directory` still exists. On the server we currently treat any directory matching a known project's `canonical` root as alive; non-project paths default to alive (fail-open) until `session.updated` arrives. Rows whose directory is reported missing are dimmed, prefixed with `·`, and clicks produce a warning toast.
+The TUI plugin asks the server, via the bundled `session-history.pathExists` RPC, whether each session's `location.directory` still exists. The server checks the real filesystem (`node:fs`), and **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session. Rows whose directory is gone are dimmed and suffixed `· missing`; clicking shows a warning toast instead of opening.
 
-> **Note:** When the TUI is connected to a remote OpenCode server, "missing directory" reflects the *server's* filesystem, not your local machine.
+This is deliberately **not** called "deleted": a missing directory and a deleted session are different states. Deleted sessions are removed from the server and never reach the list.
+
+> **Note:** When the TUI is connected to a remote OpenCode server, "missing" reflects the *server's* filesystem, not your local machine.
 
 ## Development
 

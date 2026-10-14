@@ -18,9 +18,10 @@ import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCur
  *  - Click/Enter on a row: if the session is already open in a tab, focus
  *    it; otherwise open + focus the tab. When tabs are disabled, fall back
  *    to router.navigate({ type: "session" }).
- *  - Stale sessions (working directory missing on the server) are dimmed,
- *    show a "directory missing" suffix, and clicking shows a warning toast
- *    without navigating.
+ *  - Sessions whose working directory is gone on the server are dimmed and
+ *    suffixed "· missing"; clicking shows a warning toast instead of opening.
+ *    This is not "deleted" — that is a different state (the session record
+ *    itself), which never appears in the list.
  *
  * Cross-project listing: `context.data.session.list()` only reflects the
  * sessions the CLI has already cached (mostly the current location), so when
@@ -242,7 +243,7 @@ function SidebarHistory(props: {
     blurFilter()
     if (stale().get(directory) === false) {
       context.ui.toast.show({
-        message: "Directory no longer exists",
+        message: "Directory missing",
         variant: "warning",
         sessionID,
       })
@@ -386,8 +387,8 @@ function SidebarHistory(props: {
                           : context.theme.text.base
                     }
                   >
-                    {isStale() ? "· " : ""}
                     {label}
+                    {isStale() ? " · missing" : ""}
                   </text>
                   <Show when={props.showMetrics}>
                     <text fg={context.theme.text.muted}>

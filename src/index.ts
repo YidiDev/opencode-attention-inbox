@@ -1,16 +1,15 @@
 import { Plugin } from "@opencode/plugin"
 import { SessionHistory, type SessionHistoryPathExistsInput, type SessionHistoryPathExistsOutput } from "./rpc.js"
+import { directoryExists } from "./directory.js"
 
 /**
- * Server-side plugin. Registers the `pathExists` RPC so the TUI plugin can
- * ask whether each session's working directory still exists on the server's
+ * Server-side plugin. Registers the `pathExists` RPC so the TUI plugin can ask
+ * whether each session's working directory still exists on the server's
  * filesystem.
  *
- * V2's server-side plugin context exposes no direct filesystem API. We
- * conservatively return `exists: true` for any non-empty absolute path; the
- * TUI marks rows as stale when OpenCode itself removes the session or when
- * the user closes the project. Future versions can replace this with a real
- * fs.stat when OpenCode exposes one on the plugin context.
+ * The plugin runs in the server process, so it checks the real filesystem via
+ * `node:fs`. Sessions whose directory is gone are surfaced as "missing" in the
+ * TUI — not "deleted", which is a different state (the session record itself).
  */
 export default Plugin.define({
   id: "session-history",
@@ -18,14 +17,7 @@ export default Plugin.define({
     await ctx.rpc.register(SessionHistory, {
       pathExists: async (input): Promise<SessionHistoryPathExistsOutput> => {
         const { directory } = input as SessionHistoryPathExistsInput
-        if (!directory || typeof directory !== "string" || directory.length === 0) {
-          return { exists: false }
-        }
-        // No server-side fs in V2 plugin context; treat any non-empty
-        // absolute path as alive. The TUI rerenders on session lifecycle
-        // events, which is the authoritative source of staleness.
-        void ctx
-        return { exists: true }
+        return { exists: await directoryExists(directory) }
       },
     })
   },
