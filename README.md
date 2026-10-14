@@ -25,7 +25,29 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 Requires **OpenCode V2**.
 
+### From GitHub
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["github:ypxcs/opencode-session-history"]
+}
+```
+
+Or with the CLI:
+
+```sh
+opencode plugin add github:ypxcs/opencode-session-history
+```
+
+Pin a revision with `#<commit>` (or `#main`) for reproducibility.
+
+The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
+
 ### From npm
+
+> Not published yet. This section is ready for when the package is on the
+> registry; until then use the GitHub install above.
 
 ```sh
 opencode plugin add opencode-session-history
@@ -48,18 +70,6 @@ Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
   ]
 }
 ```
-
-The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
-
-### From GitHub
-
-```jsonc
-{
-  "plugins": ["github:ypxcs/opencode-session-history"]
-}
-```
-
-Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 ### As a project-local plugin
 
