@@ -1,13 +1,6 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "./src",
-      "options": {
-        "limit": 100,
-        "showMetrics": true,
-        "showAllProjects": true
-      }
-    }
-  ]
+  "$schema": "https://opencode.ai/config.json"
+  // The plugin is installed globally (see README → Installation). To load this
+  // checkout instead of the published package, add:
+  // "plugins": [{ "package": "./src", "options": { "limit": 100, "showMetrics": true, "showAllProjects": true } }]
 }

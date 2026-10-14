@@ -3,6 +3,7 @@
  * This does not require the OpenCode runtime — it validates the input/output
  * shape of the RPC and the pure selection helpers used by the TUI plugin.
  */
+import { readFile } from "node:fs/promises"
 import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
 import { directoryExists, missingDirectories } from "../src/directory.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
@@ -157,6 +158,17 @@ assert(
 )
 const many = Array.from({ length: MAX_DIRECTORIES + 5 }, (_, index) => `/no/such/dir/${index}`)
 assert((await missingDirectories(many)).length === MAX_DIRECTORIES, "caps the request at MAX_DIRECTORIES")
+
+console.log("tui.jsx")
+// The published package ships only `src/` (see package.json "files"), so there
+// is no tsconfig.json next to it in node_modules. Without an explicit JSX
+// runtime, Bun emits `react/jsx-dev-runtime` and the TUI entry fails to load —
+// the loader only rewrites @opentui/solid, solid-js and @opencode/plugin.
+const tuiSource = await readFile(new URL("../src/tui.tsx", import.meta.url), "utf8")
+assert(
+  tuiSource.startsWith("/** @jsxImportSource @opentui/solid */"),
+  "tui.tsx declares the @opentui/solid JSX runtime (pragma required without tsconfig)",
+)
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`)

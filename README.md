@@ -125,7 +125,15 @@ This is deliberately **not** called "deleted": a missing directory and a deleted
 bun install
 bun run typecheck
 bun run tests/run.ts
+bun run audit
 ```
+
+> **Do not remove the `/** @jsxImportSource @opentui/solid */` pragma** at the top of
+> `src/tui.tsx`. The published package ships only `src/` (see `files`), so there is no
+> `tsconfig.json` next to it in `node_modules`; without the pragma Bun compiles JSX
+> against the `react` runtime and the TUI entry fails to load (`Cannot find package
+> 'react'`). OpenCode's loader only rewrites `@opentui/solid`, `solid-js` and
+> `@opencode/plugin` to its own runtime. `bun run tests/run.ts` asserts the pragma is present.
 
 ## Layout
 

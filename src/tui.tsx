@@ -1,3 +1,4 @@
+/** @jsxImportSource @opentui/solid */
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { SessionInfo } from "@opencode/client"
 import type { InputRenderable } from "@opentui/core"
