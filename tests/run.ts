@@ -3,8 +3,8 @@
  * This does not require the OpenCode runtime — it validates the input/output
  * shape of the RPC and the pure selection helpers used by the TUI plugin.
  */
-import { SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
-import { directoryExists } from "../src/directory.js"
+import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
+import { directoryExists, missingDirectories } from "../src/directory.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
 import type { Project, SessionInfo } from "@opencode/client"
 
@@ -140,6 +140,23 @@ assert((await directoryExists(process.cwd())) === true, "existing directory reso
 assert((await directoryExists("/no/such/dir/opencode-session-history")) === false, "missing directory resolves false")
 assert((await directoryExists("")) === false, "empty path resolves false")
 assert((await directoryExists(undefined)) === false, "non-string path resolves false")
+
+console.log("directory.missing")
+assert((await missingDirectories([])).length === 0, "empty request yields nothing")
+assert(
+  (await missingDirectories([process.cwd(), "/no/such/dir/a"])).join(",") === "/no/such/dir/a",
+  "reports only the missing directory",
+)
+assert(
+  (await missingDirectories(["/no/such/dir/b", "/no/such/dir/b"])).join(",") === "/no/such/dir/b",
+  "deduplicates input",
+)
+assert(
+  (await missingDirectories([null, 42, "", "/no/such/dir/c"])).join(",") === "/no/such/dir/c",
+  "drops non-string and empty entries",
+)
+const many = Array.from({ length: MAX_DIRECTORIES + 5 }, (_, index) => `/no/such/dir/${index}`)
+assert((await missingDirectories(many)).length === MAX_DIRECTORIES, "caps the request at MAX_DIRECTORIES")
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`)

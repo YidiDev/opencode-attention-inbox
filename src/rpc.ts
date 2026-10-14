@@ -1,6 +1,13 @@
 import { Rpc } from "@opencode/plugin/rpc"
 
 /**
+ * Most directories accepted in a single `check` call. The TUI sends one entry
+ * per distinct session directory (bounded by its own fetch cap), so this is
+ * headroom; it exists to bound the work a caller can request.
+ */
+export const MAX_DIRECTORIES = 1000
+
+/**
  * Single-method RPC used by the TUI plugin to ask the server which session
  * directories no longer exist on disk.
  *
@@ -15,7 +22,7 @@ export const SessionHistory = Rpc.define({
       input: {
         type: "object",
         properties: {
-          directories: { type: "array", items: { type: "string" } },
+          directories: { type: "array", items: { type: "string" }, maxItems: MAX_DIRECTORIES },
         },
         required: ["directories"],
         additionalProperties: false,
