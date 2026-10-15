@@ -44,6 +44,11 @@ Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
 
+> **Known issue:** the GitHub install currently renders only the current
+> session and hides the built-in sidebar context info. Use a local checkout
+> path in the meantime. See [Known issue: GitHub
+> install](#known-issue-github-install-renders-only-the-current-session).
+
 ### From npm
 
 > Not published yet. This section is ready for when the package is on the
@@ -108,6 +113,69 @@ Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
   { "tabs": { "mode": "on" } }
   ```
   When tabs are `auto` / `off`, the click handler uses `router.navigate` instead, which replaces the current session view.
+
+## Known issue: GitHub install renders only the current session
+
+When the plugin is installed as a package — for example
+`github:ypxcs/opencode-session-history` — the Session History panel lists
+only the current session (the header reads `1 session`), and the built-in
+sidebar context/usage info disappears.
+
+The plugin's data layer still works. With temporary logging in `loadAll`,
+the plugin fetched every project's sessions (80 in the reporter's case,
+`showAllProjects=true`) and its `sessions` memo computed all 80 rows. The
+host still drew one row. So the break is on the host render side, not in
+the session list.
+
+**Observed on:** OpenCode v2.0.32, macOS (arm64), plugin 0.1.2.
+
+**Workaround:** load the plugin from a local checkout path instead of the
+package name. This reproduces the same code and renders correctly:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "/absolute/path/to/opencode-session-history/src",
+      "options": { "limit": 100, "showMetrics": true, "showAllProjects": true }
+    }
+  ]
+}
+```
+
+### What has been ruled out
+
+| Hypothesis                              | Test                                                        | Result       |
+| --------------------------------------- | ----------------------------------------------------------- | ------------ |
+| OpenTUI/Solid version mismatch          | Pin `@opentui/core` & `@opentui/solid` `0.5.17`, `solid-js` `1.9.12` | Still broken |
+| npm install vs bun install              | npm-built `node_modules` in a local copy                    | Works        |
+| Install location                        | Copy the checkout to `~/.config/opencode/plugins/…`         | Works        |
+| `exports["./tui"]` vs path loading      | Point the config at the GitHub cache's `src/` by path       | Still broken |
+| Dependency tree differences             | Compare cache vs working copy `node_modules`                | Identical versions for `@opentui/*`, `solid-js` `1.9.12`, `@opencode/plugin` `2.0.31` |
+
+Two findings worth recording:
+
+- **The failure follows the GitHub cache tree, not the load mechanism.**
+  Pointing the config at the cache's `src/` by path still fails, so this is
+  not `exports`/package-name resolution.
+- **The packaged entry cannot use the host's renderer.** Removing
+  `@opentui/core`, `@opentui/solid`, and `solid-js` from the cache makes
+  loading fail with `Cannot find package '@opentui/solid' imported from …`.
+  The package must ship its own copy of the renderer.
+
+### Open question
+
+The same code, with the same versions, fails when loaded from the
+npm/Git install tree but renders correctly from any other copy of the same
+tree. If you know why an OpenCode package install of a TUI plugin breaks
+Slot/Solid rendering like this, please comment on the issue.
+
+### Reproducing the debug output
+
+Add temporary logging to `loadAll` in `src/tui.tsx` (or run the TUI once
+with `OPENCODE_LOG_LEVEL=DEBUG`) and watch the number of rows the plugin
+computes versus the number the panel shows.
 
 ## Missing-directory behavior
 
