@@ -25,29 +25,7 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 Requires **OpenCode V2**.
 
-### From GitHub
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:ypxcs/opencode-session-history"]
-}
-```
-
-Or with the CLI:
-
-```sh
-opencode plugin add github:ypxcs/opencode-session-history
-```
-
-Pin a revision with `#<commit>` (or `#main`) for reproducibility.
-
-The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
-
 ### From npm
-
-> Not published yet. This section is ready for when the package is on the
-> registry; until then use the GitHub install above.
 
 ```sh
 opencode plugin add opencode-session-history
@@ -70,6 +48,35 @@ Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
   ]
 }
 ```
+
+The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
+
+### From GitHub
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["github:ypxcs/opencode-session-history"]
+}
+```
+
+> **This does not work on OpenCode 2.0.32.** It fails before the plugin is
+> downloaded, with
+> `NpmInstallFailedError (cause: Error: git dep preparation failed)`.
+>
+> npm installs a Git package in two steps: download the repo, then *prepare* it
+> by running the npm CLI as a child process (`process.execPath` +
+> `npm-cli.js`). OpenCode ships its own npm, so that child process is the
+> OpenCode binary itself — it receives npm's arguments, prints its own help
+> text, and exits non-zero. npm reports "git dep preparation failed" and nothing
+> is installed. Revisions whose prepared tarball is already in
+> `~/.npm/_cacache` still install because the preparation step is skipped;
+> anything new (including `#main` after a push) does not.
+>
+> Registry (npm) installs never run that path — they just download a tarball —
+> which is why the npm install above is the supported route. If you need a
+> specific commit, load it by path from a checkout instead
+> (`"package": "/path/to/opencode-session-history/src"`, see below).
 
 ### As a project-local plugin
 

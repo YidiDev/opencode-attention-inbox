@@ -1,6 +1,6 @@
 {
   "name": "opencode-session-history",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "OpenCode V2 CLI plugin: a sidebar session-history panel with click-to-resume.",
   "type": "module",
   "license": "MIT",
