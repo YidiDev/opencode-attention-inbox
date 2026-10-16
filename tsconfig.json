@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["@opencode/plugin", "node"]
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*"]
 }

@@ -44,11 +44,6 @@ Pin a revision with `#<commit>` (or `#main`) for reproducibility.
 
 The CLI loads the sidebar panel automatically from the package's `./tui` export — you do not need to add it to `cli.json`.
 
-> **Known issue:** the GitHub install currently renders only the current
-> session and hides the built-in sidebar context info. Use a local checkout
-> path in the meantime. See [Known issue: GitHub
-> install](#known-issue-github-install-renders-only-the-current-session).
-
 ### From npm
 
 > Not published yet. This section is ready for when the package is on the
@@ -114,68 +109,33 @@ Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
   ```
   When tabs are `auto` / `off`, the click handler uses `router.navigate` instead, which replaces the current session view.
 
-## Known issue: GitHub install renders only the current session
+## Packaging: why the TUI entry is precompiled
 
-When the plugin is installed as a package — for example
-`github:ypxcs/opencode-session-history` — the Session History panel lists
-only the current session (the header reads `1 session`), and the built-in
-sidebar context/usage info disappears.
+OpenCode compiles plugin JSX through OpenTUI's own Bun plugin, but that plugin
+only touches files whose path does **not** contain `node_modules`:
 
-The plugin's data layer still works. With temporary logging in `loadAll`,
-the plugin fetched every project's sessions (80 in the reporter's case,
-`showAllProjects=true`) and its `sessions` memo computed all 80 rows. The
-host still drew one row. So the break is on the host render side, not in
-the session list.
-
-**Observed on:** OpenCode v2.0.32, macOS (arm64), plugin 0.1.2.
-
-**Workaround:** load the plugin from a local checkout path instead of the
-package name. This reproduces the same code and renders correctly:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "/absolute/path/to/opencode-session-history/src",
-      "options": { "limit": 100, "showMetrics": true, "showAllProjects": true }
-    }
-  ]
-}
+```js
+/^(?!.*[/\\]node_modules[/\\]).*\.[cm]?[jt]sx?(?:[?#].*)?$/
 ```
 
-### What has been ruled out
+Every package install — npm or Git — lands the plugin in `node_modules`, so a
+raw `.tsx` TUI entry never gets that transform. Bun's own JSX transform then
+compiles it against `@opentui/solid/jsx-runtime`, which is a *static* runtime:
+props are plain values, not getters. Each signal read happens once, at mount, so
+the panel lists only the session cached at mount (`1 session`), never refreshes,
+and the slot it was appended to is laid out from the same stale snapshot. The
+identical source loaded from a checkout path sits outside `node_modules`, gets
+the real transform, and works — which is why the bug followed the install tree.
 
-| Hypothesis                              | Test                                                        | Result       |
-| --------------------------------------- | ----------------------------------------------------------- | ------------ |
-| OpenTUI/Solid version mismatch          | Pin `@opentui/core` & `@opentui/solid` `0.5.17`, `solid-js` `1.9.12` | Still broken |
-| npm install vs bun install              | npm-built `node_modules` in a local copy                    | Works        |
-| Install location                        | Copy the checkout to `~/.config/opencode/plugins/…`         | Works        |
-| `exports["./tui"]` vs path loading      | Point the config at the GitHub cache's `src/` by path       | Still broken |
-| Dependency tree differences             | Compare cache vs working copy `node_modules`                | Identical versions for `@opentui/*`, `solid-js` `1.9.12`, `@opencode/plugin` `2.0.31` |
+So `bun run build` precompiles `src/**` into `dist/**` with the transform
+OpenCode would have applied (`babel-preset-solid`,
+`{ moduleName: "@opentui/solid", generate: "universal" }`), and
+`package.json#exports` points at `dist/`. The compiled entry imports
+`@opentui/solid` and `solid-js` by bare name, which OpenCode rewrites to its own
+runtime — the plugin shares the host's single Solid instance instead of
+installing a second one.
 
-Two findings worth recording:
-
-- **The failure follows the GitHub cache tree, not the load mechanism.**
-  Pointing the config at the cache's `src/` by path still fails, so this is
-  not `exports`/package-name resolution.
-- **The packaged entry cannot use the host's renderer.** Removing
-  `@opentui/core`, `@opentui/solid`, and `solid-js` from the cache makes
-  loading fail with `Cannot find package '@opentui/solid' imported from …`.
-  The package must ship its own copy of the renderer.
-
-### Open question
-
-The same code, with the same versions, fails when loaded from the
-npm/Git install tree but renders correctly from any other copy of the same
-tree. If you know why an OpenCode package install of a TUI plugin breaks
-Slot/Solid rendering like this, please comment on the issue.
-
-### Reproducing the debug output
-
-Add temporary logging to `loadAll` in `src/tui.tsx` (or run the TUI once
-with `OPENCODE_LOG_LEVEL=DEBUG`) and watch the number of rows the plugin
-computes versus the number the panel shows.
+`dist/` is committed on purpose: package installs do not run a build step.
 
 ## Missing-directory behavior
 
@@ -191,34 +151,43 @@ This is deliberately **not** called "deleted": a missing directory and a deleted
 
 ```sh
 bun install
+bun run build
 bun run typecheck
 bun run tests/run.ts
 bun run audit
 ```
 
-> **Two packaging constraints for the TUI entry** — both are asserted by
-> `bun run tests/run.ts`:
+> **Packaging constraints** — all asserted by `bun run tests/run.ts`:
 >
-> 1. Keep the `/** @jsxImportSource @opentui/solid */` pragma at the top of
->    `src/tui.tsx`. The package ships only `src/` (see `files`), so there is no
->    `tsconfig.json` next to it in `node_modules`; without the pragma Bun compiles
->    JSX against the `react` runtime (`Cannot find package 'react'`).
-> 2. Keep `@opentui/core`, `@opentui/solid` and `solid-js` as **non-optional**
->    `peerDependencies`. OpenCode rewrites those specifiers to its own runtime only
->    for files it discovers by walking a plugin's import graph, and the TUI entry is
->    not always reached — so they must be installed alongside the package
->    (`Cannot find package '@opentui/solid'` otherwise).
+> 1. `dist/` must be committed and up to date. The test rebuilds `src/` into a
+>    temp directory and compares it byte for byte, so run `bun run build` after
+>    touching anything in `src/`. Package installs never run a build.
+> 2. The build must not use `babel-plugin-module-resolver`. The compiled entry
+>    has to import `@opentui/solid` and `solid-js` by bare name so OpenCode can
+>    redirect them to its own runtime; baked-in `opentui:runtime-module:` ids
+>    only resolve inside the host process.
+> 3. Keep the `/** @jsxImportSource @opentui/solid */` pragma at the top of
+>    `src/tui.tsx`. That raw file is still loaded when the plugin is configured
+>    by path from a checkout, where no `tsconfig.json` sits next to it; without
+>    the pragma Bun compiles JSX against the `react` runtime
+>    (`Cannot find package 'react'`).
+> 4. Keep `@opentui/core`, `@opentui/solid` and `solid-js` as **non-optional**
+>    `peerDependencies`. They must be installed alongside the package or loading
+>    fails with `Cannot find package '@opentui/solid'`.
 
 ## Layout
 
 ```
+scripts/
+└── build.ts     # Compiles src/ → dist/ (babel-preset-solid, universal)
 src/
 ├── rpc.ts       # SessionHistory RPC contract
 ├── index.ts     # Server plugin: registers the check RPC
 ├── sessions.ts  # Pure session list/filter helpers (unit-tested)
 └── tui.tsx      # CLI plugin: sidebar slot + filter + click + keymap
 tests/
-└── run.ts       # RPC contract + session helper tests
+└── run.ts       # RPC contract + session helper + packaging tests
+dist/            # Committed build output; what package installs load
 ```
 
 ## Reporting bugs

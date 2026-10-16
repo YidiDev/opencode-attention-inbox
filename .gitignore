@@ -1,5 +1,4 @@
-# Build output
-dist/
+# Build output (dist/ is committed on purpose: package installs get no build step)
 *.tsbuildinfo
 
 # Editor

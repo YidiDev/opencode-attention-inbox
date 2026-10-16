@@ -3,10 +3,13 @@
  * This does not require the OpenCode runtime — it validates the input/output
  * shape of the RPC and the pure selection helpers used by the TUI plugin.
  */
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
 import { directoryExists, missingDirectories } from "../src/directory.js"
 import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
+import { build, defaultOutDir, TUI_ENTRY } from "../scripts/build.js"
 import type { Project, SessionInfo } from "@opencode/client"
 
 let failures = 0
@@ -160,26 +163,83 @@ const many = Array.from({ length: MAX_DIRECTORIES + 5 }, (_, index) => `/no/such
 assert((await missingDirectories(many)).length === MAX_DIRECTORIES, "caps the request at MAX_DIRECTORIES")
 
 console.log("tui.jsx")
-// The published package ships only `src/` (see package.json "files"), so there
-// is no tsconfig.json next to it in node_modules. Without an explicit JSX
-// runtime, Bun emits `react/jsx-dev-runtime` and the TUI entry fails to load —
-// the loader only rewrites @opentui/solid, solid-js and @opencode/plugin.
+// `src/tui.tsx` is still loaded raw when the plugin is configured by path from
+// a checkout, where no tsconfig.json sits next to it. Without an explicit JSX
+// runtime Bun would emit `react/jsx-dev-runtime`, which the loader does not
+// rewrite.
 const tuiSource = await readFile(new URL("../src/tui.tsx", import.meta.url), "utf8")
 assert(
   tuiSource.startsWith("/** @jsxImportSource @opentui/solid */"),
   "tui.tsx declares the @opentui/solid JSX runtime (pragma required without tsconfig)",
 )
 
-console.log("package.peers")
-// OpenCode only rewrites @opentui/solid, solid-js and @opencode/plugin for files
-// it discovers by walking a plugin's import graph, and the TUI entry is not
-// always reached. So the peers must actually be installed with the package:
-// marking them optional stops npm from installing them and the TUI entry then
-// fails with "Cannot find package '@opentui/solid'".
+console.log("package.build")
 const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
+  exports?: Record<string, string>
+  files?: string[]
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
 }
+const tuiExport = manifest.exports?.["./tui"]
+assert(tuiExport === `./dist/${TUI_ENTRY}`, `exports["./tui"] points at the compiled entry (${tuiExport})`)
+assert(manifest.exports?.["."] === "./dist/index.js", 'exports["."] points at the compiled server entry')
+assert(manifest.files?.includes("dist") === true, 'package "files" ships dist/')
+
+// OpenCode applies the Solid JSX transform only to files outside node_modules,
+// so an installed package must ship JS that was already compiled with it. The
+// committed dist/ has to match a fresh build: a stale dist silently reverts the
+// TUI entry to Bun's static JSX transform, which renders the panel once and
+// never updates.
+async function listFiles(directory: string, prefix = ""): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files: string[] = []
+  for (const entry of entries) {
+    const path = join(prefix, entry.name)
+    if (entry.isDirectory()) files.push(...(await listFiles(join(directory, entry.name), path)))
+    else files.push(path)
+  }
+  return files.sort()
+}
+
+const scratch = await mkdtemp(join(tmpdir(), "opencode-session-history-build-"))
+try {
+  const emitted = await build(scratch)
+  assert(emitted.includes(TUI_ENTRY), `the build emits ${TUI_ENTRY}`)
+  assert(emitted.includes("index.js"), "the build emits the server entry")
+
+  const committed = await listFiles(defaultOutDir)
+  assert(
+    committed.join(",") === emitted.join(","),
+    `dist/ holds exactly the built files (${committed.length} vs ${emitted.length})`,
+  )
+  for (const file of emitted) {
+    const [fresh, onDisk] = await Promise.all([
+      readFile(join(scratch, file), "utf8"),
+      readFile(join(defaultOutDir, file), "utf8").catch(() => undefined),
+    ])
+    assert(onDisk === fresh, `dist/${file} is up to date (run \`bun run build\`)`)
+  }
+} finally {
+  await rm(scratch, { recursive: true, force: true })
+}
+
+const compiledTui = await readFile(join(defaultOutDir, TUI_ENTRY), "utf8")
+assert(
+  /from "@opentui\/solid"/.test(compiledTui) && compiledTui.includes('from "solid-js"'),
+  "compiled entry imports the host @opentui/solid and solid-js runtimes by name",
+)
+assert(
+  !compiledTui.includes("opentui:runtime-module:"),
+  "compiled entry does not bake in runtime module ids (the host rewrites the bare specifiers)",
+)
+assert(!compiledTui.includes("jsxDEV("), "compiled entry is not emitted by Bun's static JSX transform")
+assert(compiledTui.includes("_$effect") && /get \w+\(\)/.test(compiledTui), "compiled entry is reactive (effects + prop getters)")
+
+console.log("package.peers")
+// OpenCode rewrites @opentui/solid, solid-js and @opencode/plugin to its own
+// runtime. The peers must still actually be installed with the package: marking
+// them optional stops the installer from fetching them and loading then fails
+// with "Cannot find package '@opentui/solid'".
 const requiredPeers = ["@opentui/core", "@opentui/solid", "solid-js"]
 assert(
   requiredPeers.every((name) => name in (manifest.peerDependencies ?? {})),
