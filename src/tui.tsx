@@ -1,10 +1,25 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { SessionInfo } from "@opencode/client"
-import type { InputRenderable } from "@opentui/core"
+import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
-import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckOutput } from "./rpc.js"
-import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "./sessions.js"
+import {
+  MAX_DIRECTORIES,
+  SessionHistory,
+  type SessionHistoryCheckOutput,
+  type SessionHistorySettingsOutput,
+} from "./rpc.js"
+import {
+  filterSessions,
+  HOME_PANEL_MAX_WIDTH,
+  homePanelWidth,
+  mergeSessions,
+  projectLabel,
+  scopeToCurrentProject,
+  sessionListHeight,
+  truncateToWidth,
+} from "./sessions.js"
+import { resolveOptions } from "./options.js"
 
 /**
  * CLI plugin: append a Session History panel into the built-in sidebar.
@@ -26,22 +41,45 @@ import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCur
  *    not "deleted" — that is a different state (the session record itself),
  *    which never appears in the list.
  *
- * Cross-project listing: `context.data.session.list()` only reflects the
- * sessions the CLI has already cached (mostly the current location), so when
- * listing all projects we also page the full server index via
- * `context.client.session.list({})` and merge the reactive cache on top.
+ * Listing: `context.data.session.list()` only reflects the sessions the CLI has
+ * already cached (often none in a fresh TUI), so the panel also pages the full
+ * server index via `context.client.session.list({})` and merges the reactive
+ * cache on top. Project scope filters that combined list.
  */
 export default Plugin.define({
   id: "session-history",
   setup(context) {
-    const limit = (context.options.limit as number | undefined) ?? 100
-    const showMetrics = (context.options.showMetrics as boolean | undefined) ?? true
-    const showAllProjects = (context.options.showAllProjects as boolean | undefined) ?? true
+    const [serverOptions, setServerOptions] = createSignal<Readonly<Record<string, unknown>>>({})
+    // OpenCode delivers config options to the server half only. The server
+    // answers them over `settings`; `context.options` wins if OpenCode ever
+    // starts populating the TUI half too.
+    const settings = createMemo(() => resolveOptions(serverOptions(), context.options))
 
-    // Ensure project + session stores are populated.
+    let settingsRetry: ReturnType<typeof setTimeout> | undefined
+    let settingsAttempts = 0
+    const loadSettings = async () => {
+      const rpc = context.client.rpc(SessionHistory)
+      const location = context.location ?? context.data.location.default()
+      const result = (await rpc.settings({}, { location })) as SessionHistorySettingsOutput
+      setServerOptions({ ...result.options })
+    }
+    const retrySettings = (error: unknown) => {
+      const type = (error as { type?: string } | undefined)?.type
+      // A missing method means the server half predates this TUI half; retrying
+      // cannot help. Everything else (mainly `rpc.unavailable` while the
+      // location activates) is retried a bounded number of times.
+      if (type === "rpc.method_not_found" || settingsAttempts >= 15) return
+      settingsAttempts++
+      settingsRetry = setTimeout(() => void loadSettings().catch(retrySettings), 1000)
+    }
+    void loadSettings().catch(retrySettings)
+    onCleanup(() => {
+      if (settingsRetry !== undefined) clearTimeout(settingsRetry)
+    })
+
+    // Ensure the project store is populated; the session list itself pages the
+    // server index, so it does not depend on the CLI's cache being warm.
     void context.data.project.sync().catch(() => {})
-    // Tabs.enabled() gates the click path; we don't pre-sync sessions here
-    // because context.data.session.list() returns whatever is loaded.
 
     const stopCreated = context.data.on("session.created", () => {
       // Session lifecycle event triggers a refresh. The data store is
@@ -74,9 +112,12 @@ export default Plugin.define({
       render: (input) => (
         <SidebarHistory
           activeSessionID={input.sessionID}
-          limit={limit}
-          showMetrics={showMetrics}
-          showAllProjects={showAllProjects}
+          limit={settings().limit}
+          maxVisibleSessions={settings().maxVisibleSessions}
+          truncateSessionTitles={settings().truncateSessionTitles}
+          showMetrics={settings().showMetrics}
+          showAllProjects={settings().showAllProjects}
+          width={HOME_PANEL_MAX_WIDTH - PANEL_TEXT_INSET}
         />
       ),
     })
@@ -86,7 +127,13 @@ export default Plugin.define({
     const disposeHome = context.ui.slot({
       append: "app",
       render: () => (
-        <HomeHistoryPanel limit={limit} showMetrics={showMetrics} showAllProjects={showAllProjects} />
+        <HomeHistoryPanel
+          limit={settings().limit}
+          maxVisibleSessions={settings().maxVisibleSessions}
+          truncateSessionTitles={settings().truncateSessionTitles}
+          showMetrics={settings().showMetrics}
+          showAllProjects={settings().showAllProjects}
+        />
       ),
     })
 
@@ -99,6 +146,8 @@ export default Plugin.define({
 
 const PAGE_SIZE = 100
 const MAX_FETCH = 500
+/** Horizontal padding (1 each side) plus the scrollbar gutter. */
+const PANEL_TEXT_INSET = 3
 
 /**
  * Home-screen session panel. The CLI renders the sidebar only inside the
@@ -108,6 +157,8 @@ const MAX_FETCH = 500
  */
 function HomeHistoryPanel(props: {
   limit: number
+  maxVisibleSessions: number
+  truncateSessionTitles: boolean
   showMetrics: boolean
   showAllProjects: boolean
 }) {
@@ -136,8 +187,11 @@ function HomeHistoryPanel(props: {
         <SidebarHistory
           activeSessionID={undefined}
           limit={props.limit}
+          maxVisibleSessions={props.maxVisibleSessions}
+          truncateSessionTitles={props.truncateSessionTitles}
           showMetrics={props.showMetrics}
           showAllProjects={props.showAllProjects}
+          width={Math.max(0, panelWidth() - PANEL_TEXT_INSET)}
           align="center"
         />
       </box>
@@ -148,8 +202,12 @@ function HomeHistoryPanel(props: {
 function SidebarHistory(props: {
   activeSessionID: string | undefined
   limit: number
+  maxVisibleSessions: number
+  truncateSessionTitles: boolean
   showMetrics: boolean
   showAllProjects: boolean
+  /** Fallback content width until the scrollbox has been laid out. */
+  width: number
   /** Vertical placement of the whole block. The sidebar uses "top"; the home panel centers it. */
   align?: "top" | "center"
 }) {
@@ -167,14 +225,24 @@ function SidebarHistory(props: {
   // content, so an unfocused <input> never receives keystrokes. Focus it on
   // click and leave it with escape so it never steals focus from the prompt.
   let inputRef: InputRenderable | undefined
+  let scrollRef: ScrollBoxRenderable | undefined
+  const [listWidth, setListWidth] = createSignal(0)
+  const textWidth = () => (listWidth() > 0 ? listWidth() : props.width)
   const focusFilter = () => inputRef?.focus()
   const blurFilter = () => inputRef?.blur()
+
+  // Arrow-key navigation moves the highlight even when the list is capped to a
+  // few visible rows; keep the active row inside the viewport.
+  createEffect(() => {
+    const id = activeRow()
+    if (!id) return
+    scrollRef?.scrollChildIntoView(`session-history-${id}`)
+  })
 
   // Full cross-project index from the server. The reactive store only holds
   // what the CLI has cached, so page the server list to enumerate every
   // project's sessions (newest first, top-level only).
   const loadAll = async () => {
-    if (!props.showAllProjects) return
     const collected: SessionInfo[] = []
     let cursor: string | undefined
     do {
@@ -193,7 +261,6 @@ function SidebarHistory(props: {
   // Refresh the index when the set of sessions changes (debounced).
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
   const scheduleRefresh = () => {
-    if (!props.showAllProjects) return
     if (refreshTimer !== undefined) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => void loadAll().catch(() => {}), 250)
   }
@@ -215,10 +282,14 @@ function SidebarHistory(props: {
   // needs every directory, not just the visible rows.
   const allSessions = createMemo(() => {
     const cached = context.data.session.list() ?? []
-    const scoped = props.showAllProjects
-      ? cached
-      : scopeToCurrentProject(cached, context.data.location.default()?.directory, context.data.project.list() ?? [])
-    return props.showAllProjects ? mergeSessions(remote(), scoped) : scoped
+    const projects = context.data.project.list() ?? []
+    const currentRoot = context.data.location.default()?.directory
+    // The reactive cache only holds sessions the CLI has loaded (often none in
+    // a fresh TUI), so the server index is what makes the list complete. In
+    // project scope, filter both sources by the current project.
+    const scope = (rows: readonly SessionInfo[]) =>
+      props.showAllProjects ? rows : scopeToCurrentProject(rows, currentRoot, projects)
+    return mergeSessions(scope(remote()), scope(cached))
   })
 
   // Reactive list of sessions, filtered by query and project scope.
@@ -428,14 +499,32 @@ function SidebarHistory(props: {
           </text>
         }
       >
-        <scrollbox flexDirection="column" maxHeight={20}>
+        <scrollbox
+          ref={(el) => {
+            scrollRef = el
+            setListWidth(el.viewport.width)
+          }}
+          onSizeChange={() => setListWidth(scrollRef?.viewport.width ?? 0)}
+          maxHeight={sessionListHeight(props.maxVisibleSessions, props.showMetrics)}
+        >
           <For each={sessions()}>
             {(s) => {
               const isStale = createMemo(() => stale().get(s.location.directory) === false)
               const isActive = createMemo(() => props.activeSessionID === s.id || activeRow() === s.id)
               const label = s.title?.trim() || `session ${s.id.slice(0, 8)}`
+              // OpenTUI's native truncate puts the ellipsis in the middle, so
+              // cut titles by measured width and append "..." ourselves.
+              const title = () =>
+                props.truncateSessionTitles ? truncateToWidth(label, textWidth() - (isStale() ? 2 : 0)) : label
+              const metric = () =>
+                truncateToWidth(
+                  `${props.showAllProjects ? `${projectLabel(s.location.directory)} · ` : ""}` +
+                    `${formatRelative(s.time.updated)} · $${s.cost.toFixed(2)}`,
+                  textWidth(),
+                )
               return (
                 <box
+                  id={`session-history-${s.id}`}
                   flexDirection="column"
                   border={["bottom"]}
                   borderColor={context.theme.border?.base}
@@ -450,16 +539,16 @@ function SidebarHistory(props: {
                           ? context.theme.text.strong
                           : context.theme.text.base
                     }
+                    wrapMode={props.truncateSessionTitles ? "none" : "word"}
                   >
-                    {label}
                     {isStale() ? (
-                      <span style={{ fg: context.theme.text.feedback.error.base }}>{" ✗ missing"}</span>
+                      <span style={{ fg: context.theme.text.feedback.error.base }}>{"✗ "}</span>
                     ) : null}
+                    {title()}
                   </text>
                   <Show when={props.showMetrics}>
-                    <text fg={context.theme.text.muted}>
-                      {props.showAllProjects ? `${projectLabel(s.location.directory)} · ` : ""}
-                      {formatRelative(s.time.updated)} · ${s.cost.toFixed(2)}
+                    <text fg={context.theme.text.muted} wrapMode="none">
+                      {metric()}
                     </text>
                   </Show>
                 </box>

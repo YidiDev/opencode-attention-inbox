@@ -6,6 +6,10 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
 
 - Sidebar panel that lists sessions across every project, newest-first (or
   scoped to the current project with `showAllProjects: false`).
+- Compact by default: three session rows are visible and the rest scroll
+  (`maxVisibleSessions`). Long titles end in `...` instead of wrapping
+  (`truncateSessionTitles`), so each row keeps a predictable height. Arrow
+  navigation keeps the highlighted row in view.
 - Also shown on the home screen (before any session is open) as a right-hand
   panel, width permitting — the CLI's own sidebar only exists inside a session.
 - Search filter by title, id, project, or directory. Click the field to focus
@@ -15,11 +19,12 @@ A CLI plugin for [OpenCode V2](https://opencode.ai/v2/docs/) that adds a **Sessi
   - If the session is already open in a tab → focus that tab.
   - Otherwise → open a new tab and focus it.
   - When session tabs are disabled → falls back to `router.navigate({ type: "session" })`.
-- Sessions whose working directory is gone on the server are dimmed and marked
-  with a red `✗ missing`. Clicking one warns first (a short, dismissible toast
-  that never navigates); clicking it again opens it anyway. This is distinct
-  from a *deleted* session (the record itself), which never appears in the list.
-- Subscribes to `session.created` / `session.updated` / `session.deleted` for live refresh.
+- Sessions whose working directory is gone on the server are dimmed and prefixed
+  with a red `✗`. Clicking one warns first (a short, dismissible toast that never
+  navigates); clicking it again opens it anyway. This is distinct from a
+  *deleted* session (the record itself), which never appears in the list.
+- Subscribes to session lifecycle events (`created`, `renamed`, `metadata` and
+  `usage` updates, `deleted`) for live refresh.
 
 ## Installation
 
@@ -41,6 +46,8 @@ Or add it to `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`):
       "package": "opencode-session-history",
       "options": {
         "limit": 100,
+        "maxVisibleSessions": 3,
+        "truncateSessionTitles": true,
         "showMetrics": true,
         "showAllProjects": true
       }
@@ -80,7 +87,7 @@ The CLI loads the sidebar panel automatically from the package's `./tui` export 
 
 ### As a project-local plugin
 
-1. Copy this directory to `.opencode/plugins/session-history/` in your project (V2 discovers `index.ts` + `tui.ts` package directories there automatically).
+1. Copy this directory to `.opencode/plugins/session-history/` in your project (V2 discovers `index.ts` + `tui.tsx` package directories there automatically).
 2. Or reference it explicitly:
 
    ```jsonc
@@ -90,6 +97,8 @@ The CLI loads the sidebar panel automatically from the package's `./tui` export 
          "package": "./src",
          "options": {
            "limit": 100,
+           "maxVisibleSessions": 3,
+           "truncateSessionTitles": true,
            "showMetrics": true,
            "showAllProjects": true
          }
@@ -100,11 +109,24 @@ The CLI loads the sidebar panel automatically from the package's `./tui` export 
 
 ### Options
 
-| Option             | Type      | Default | Description                                                     |
-| ------------------ | --------- | ------- | --------------------------------------------------------------- |
-| `limit`            | `number`  | `100`   | Maximum number of rows shown.                                   |
-| `showMetrics`      | `boolean` | `true`  | Show "Xm ago · $Y.YY" line under the title.                    |
-| `showAllProjects`  | `boolean` | `true`  | When true, list sessions from every project, not just the current one. When false, only the current project's sessions are shown. |
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `limit` | `number` | `100` | Maximum number of sessions included in the list. |
+| `maxVisibleSessions` | `number` | `3` | Sessions visible before the list scrolls. |
+| `truncateSessionTitles` | `boolean` | `true` | Keep titles on one line with `...`. Set to `false` to word-wrap them. |
+| `showMetrics` | `boolean` | `true` | Show the "Xm ago · $Y.YY" line under the title. |
+| `showAllProjects` | `boolean` | `true` | When true, list sessions from every project. When false, only the current project's sessions are shown. |
+
+> With `truncateSessionTitles: true`, `maxVisibleSessions` maps to a fixed row
+> height. With wrapping enabled, a long title can make a row taller and reduce
+> the number of fully visible sessions.
+
+> **How options are delivered.** OpenCode passes a plugin's config `options` to
+> its *server* half but not to its *TUI* half, which receives `{}` for a plugin
+> declared in `opencode.json(c)`. The TUI reads the values back over the
+> plugin's own `settings` RPC, so the table above works from `opencode.json(c)`.
+> Wrong-typed values are ignored rather than coerced. If the options are also
+> declared in `cli.json` under `plugins`, those take precedence in the TUI.
 
 ## Requirements
 
@@ -148,7 +170,7 @@ installing a second one.
 
 The TUI plugin asks the server, via the bundled `session-history.check` RPC, which session directories no longer exist. One batched call covers every distinct directory, and it runs on the server (`node:fs`), so it also works against a remote server and for sessions from every project. It **fails open**: only `ENOENT`/`ENOTDIR` count as missing, so protected paths (macOS `EPERM`) and transient errors never mark a live session.
 
-Rows whose directory is gone are dimmed and marked with a red `✗ missing`. Activating one (click or Enter) warns first instead of opening: a 3-second, dismissible toast that never navigates. Activating the same row again within a few seconds opens it anyway — the CLI then handles the missing directory itself. The warning state resets on a timer and whenever the filter changes.
+Rows whose directory is gone are dimmed and prefixed with a red `✗`. Activating one (click or Enter) warns first instead of opening: a 3-second, dismissible toast that never navigates. Activating the same row again within a few seconds opens it anyway — the CLI then handles the missing directory itself. The warning state resets on a timer and whenever the filter changes.
 
 This is deliberately **not** called "deleted": a missing directory and a deleted session are different states. Deleted sessions are removed from the server and never reach the list.
 
@@ -188,12 +210,14 @@ bun run audit
 scripts/
 └── build.ts     # Compiles src/ → dist/ (babel-preset-solid, universal)
 src/
-├── rpc.ts       # SessionHistory RPC contract
-├── index.ts     # Server plugin: registers the check RPC
+├── rpc.ts       # SessionHistory RPC contract (check + settings)
+├── index.ts     # Server plugin: registers the check + settings RPCs
+├── directory.ts # Server-side directory existence check
+├── options.ts   # Pure config-option merge + defaults (unit-tested)
 ├── sessions.ts  # Pure session list/filter helpers (unit-tested)
 └── tui.tsx      # CLI plugin: sidebar slot + filter + click + keymap
 tests/
-└── run.ts       # RPC contract + session helper + packaging tests
+└── run.ts       # RPC contract + option/session helper + packaging tests
 dist/            # Committed build output; what package installs load
 ```
 

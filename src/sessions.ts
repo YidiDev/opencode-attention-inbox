@@ -72,6 +72,47 @@ export function projectLabel(directory: string): string {
   return parts.at(-1) ?? directory
 }
 
+type BunGlobal = { Bun?: { stringWidth?: (text: string) => number } }
+
+/** Display width in terminal cells, with a code-point fallback outside Bun. */
+function cellWidth(text: string): number {
+  return (globalThis as BunGlobal).Bun?.stringWidth?.(text) ?? Array.from(text).length
+}
+
+/**
+ * Truncate `text` to at most `width` terminal cells, ending in `...`.
+ *
+ * OpenTUI's built-in `truncate` keeps both the prefix and the suffix and puts
+ * the ellipsis in the middle. Session titles need a normal trailing ellipsis,
+ * so measure and cut here. A non-positive width means "not measured yet" and
+ * leaves the text alone.
+ */
+export function truncateToWidth(text: string, width: number): string {
+  if (width <= 0 || cellWidth(text) <= width) return text
+  if (width <= 3) return ".".repeat(width)
+  const budget = width - 3
+  let result = ""
+  let used = 0
+  for (const char of text) {
+    const size = cellWidth(char)
+    if (used + size > budget) break
+    result += char
+    used += size
+  }
+  return `${result}...`
+}
+
+/**
+ * Terminal lines needed to show `maxVisibleSessions` session rows.
+ *
+ * Each row has a title and a bottom border; the metrics line adds one more.
+ * A scrollbox `maxHeight` is in cells, so this keeps the panel compact while
+ * leaving the rest of the list reachable by scrolling.
+ */
+export function sessionListHeight(maxVisibleSessions: number, showMetrics: boolean): number {
+  return Math.max(1, Math.floor(maxVisibleSessions)) * (showMetrics ? 3 : 2)
+}
+
 /** Width the CLI gives its session sidebar, so the home panel matches it. */
 export const HOME_PANEL_MAX_WIDTH = 42
 /** Horizontal budget the centered home screen needs (prompt `maxWidth` 75 + margin). */

@@ -6,9 +6,24 @@
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { MAX_DIRECTORIES, SessionHistory, type SessionHistoryCheckInput, type SessionHistoryCheckOutput } from "../src/rpc.js"
+import {
+  MAX_DIRECTORIES,
+  SessionHistory,
+  type SessionHistoryCheckInput,
+  type SessionHistoryCheckOutput,
+  type SessionHistorySettingsOutput,
+} from "../src/rpc.js"
 import { directoryExists, missingDirectories } from "../src/directory.js"
-import { filterSessions, homePanelWidth, mergeSessions, projectLabel, scopeToCurrentProject } from "../src/sessions.js"
+import {
+  filterSessions,
+  homePanelWidth,
+  mergeSessions,
+  projectLabel,
+  scopeToCurrentProject,
+  sessionListHeight,
+  truncateToWidth,
+} from "../src/sessions.js"
+import { resolveOptions } from "../src/options.js"
 import { build, defaultOutDir, TUI_ENTRY } from "../scripts/build.js"
 import type { Project, SessionInfo } from "@opencode/client"
 
@@ -25,13 +40,92 @@ function assert(cond: unknown, msg: string) {
 console.log("rpc.shape")
 const def = SessionHistory as unknown as {
   id: string
-  methods: Record<string, { input: object; output: object }>
+  methods: Record<string, { input: unknown; output: unknown }>
 }
 const m = def.methods.check
 assert(def.id === "session-history", "rpc id is 'session-history'")
 assert(typeof m === "object" && m !== null, "check method defined")
 assert(typeof m?.input === "object", "check has input schema")
 assert(typeof m?.output === "object", "check has output schema")
+
+console.log("rpc.settings")
+// Config options reach the server half only, so the TUI reads them over this
+// method. The output must allow arbitrary option keys.
+const settingsMethod = def.methods.settings
+assert(typeof settingsMethod === "object" && settingsMethod !== null, "settings method defined")
+assert(typeof settingsMethod?.input === "object", "settings has input schema")
+assert(typeof settingsMethod?.output === "object", "settings has output schema")
+const optionsSchema = (
+  settingsMethod?.output as { properties?: Record<string, { additionalProperties?: boolean }> }
+)?.properties?.options
+assert(optionsSchema?.additionalProperties === true, "settings output accepts arbitrary option keys")
+const sampleSettings: SessionHistorySettingsOutput = { options: { limit: 5 } }
+assert(sampleSettings.options.limit === 5, "settings.options carries the configured values")
+
+console.log("options.resolve")
+assert(
+  JSON.stringify(resolveOptions()) ===
+    JSON.stringify({
+      limit: 100,
+      maxVisibleSessions: 3,
+      truncateSessionTitles: true,
+      showMetrics: true,
+      showAllProjects: true,
+    }),
+  "no sources falls back to the documented defaults",
+)
+assert(resolveOptions({ limit: 10 }).limit === 10, "reads a numeric limit")
+assert(resolveOptions({ limit: "10" }).limit === 100, "ignores a wrongly typed limit")
+assert(resolveOptions({ limit: -3 }).limit === 0, "clamps a negative limit")
+assert(resolveOptions({ limit: 2.7 }).limit === 2, "floors a fractional limit")
+assert(resolveOptions({ limit: Infinity }).limit === 100, "ignores a non-finite limit")
+assert(
+  resolveOptions({ maxVisibleSessions: 2 }).maxVisibleSessions === 2,
+  "reads a numeric visible-session count",
+)
+assert(
+  resolveOptions({ maxVisibleSessions: "2" }).maxVisibleSessions === 3,
+  "ignores a wrongly typed visible-session count",
+)
+assert(
+  resolveOptions({ maxVisibleSessions: 0 }).maxVisibleSessions === 1,
+  "clamps the visible-session count to at least one",
+)
+assert(
+  resolveOptions({ maxVisibleSessions: 2.7 }).maxVisibleSessions === 2,
+  "floors a fractional visible-session count",
+)
+assert(
+  resolveOptions({ truncateSessionTitles: false }).truncateSessionTitles === false,
+  "reads the title truncation option",
+)
+assert(
+  resolveOptions({ truncateSessionTitles: "false" }).truncateSessionTitles === true,
+  "ignores a wrongly typed title truncation option",
+)
+assert(resolveOptions({ showMetrics: false }).showMetrics === false, "reads a boolean option")
+assert(resolveOptions({ showMetrics: "false" }).showMetrics === true, "ignores a wrongly typed boolean")
+assert(
+  resolveOptions({ showAllProjects: false }, { showAllProjects: true }).showAllProjects === true,
+  "later sources win",
+)
+assert(
+  resolveOptions({ limit: 7, showMetrics: false }, { showAllProjects: false }).limit === 7,
+  "keys absent from a later source keep their earlier value",
+)
+
+console.log("sessions.listHeight")
+assert(sessionListHeight(3, true) === 9, "three rows with metrics need nine lines")
+assert(sessionListHeight(3, false) === 6, "three rows without metrics need six lines")
+assert(sessionListHeight(1, true) === 3, "one row still reserves title, metrics and border")
+assert(sessionListHeight(0, true) === 3, "never collapses below one row")
+
+console.log("sessions.truncate")
+assert(truncateToWidth("hello", 5) === "hello", "text that fits is unchanged")
+assert(truncateToWidth("hello world", 8) === "hello...", "cuts at the end and appends an ellipsis")
+assert(truncateToWidth("hello", 0) === "hello", "unknown width leaves the title alone")
+assert(truncateToWidth("hello", 3) === "...", "a tiny budget still shows the ellipsis")
+assert(truncateToWidth("日本語です", 5) === "日...", "counts wide characters by terminal cells")
 
 console.log("rpc.input")
 const sampleInput: SessionHistoryCheckInput = { directories: ["/tmp/foo"] }
