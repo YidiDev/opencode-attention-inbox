@@ -19,7 +19,9 @@
     "README.md",
     "LICENSE",
     "NOTICE",
-    "SECURITY.md"
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "opencode",
@@ -35,10 +37,14 @@
   },
   "scripts": {
     "build": "bun run scripts/build.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome check --formatter-enabled=false .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test tests",
+    "test": "bun test --preload @opentui/solid/preload tests",
+    "test:coverage": "bun run scripts/coverage.mjs",
     "test:live": "bun run scripts/live-smoke.ts",
-    "check": "bun run typecheck && bun run build && bun test tests",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run test:coverage",
     "audit": "bun audit",
     "prepublishOnly": "bun run check"
   },
@@ -56,12 +62,17 @@
   "devDependencies": {
     "@babel/core": "7.29.7",
     "@babel/preset-typescript": "7.27.1",
+    "@biomejs/biome": "2.4.0",
     "@opencode/client": "2.1.4",
     "@opentui/solid": "^0.6.6",
-    "@types/node": "^26.6.5",
-    "babel-preset-solid": "1.9.12",
-    "solid-js": "1.9.12",
     "@types/bun": "^1.4.0",
+    "@types/node": "^26.6.5",
+    "babel-plugin-istanbul": "7.0.1",
+    "babel-preset-solid": "1.9.12",
+    "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-report": "3.0.1",
+    "istanbul-reports": "3.2.0",
+    "solid-js": "1.9.12",
     "typescript": "^5.6.0"
   }
 }

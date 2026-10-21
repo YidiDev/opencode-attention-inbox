@@ -11,7 +11,8 @@ export function resolveOptions(...sources: (Readonly<Record<string, unknown>> | 
   const number = (key: string, fallback: number, min: number, max: number) => {
     const value = raw[key]
     return typeof value === "number" && Number.isFinite(value)
-      ? Math.min(max, Math.max(min, Math.floor(value))) : fallback
+      ? Math.min(max, Math.max(min, Math.floor(value)))
+      : fallback
   }
   return {
     defaultScope: raw.defaultScope === "all" ? "all" : "project",

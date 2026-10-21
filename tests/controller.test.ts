@@ -1,11 +1,13 @@
 import { afterEach, expect, test } from "bun:test"
-import { InboxController } from "../src/data/controller.js"
 import { deriveRows } from "../src/attention/derive.js"
-import { FakePort, deferred, session, until } from "./support.js"
+import { InboxController } from "../src/data/controller.js"
 import type { InboxPort } from "../src/data/port.js"
+import { deferred, FakePort, session, until } from "./support.js"
 
 const controllers: InboxController[] = []
-afterEach(() => { for (const controller of controllers.splice(0)) controller.dispose() })
+afterEach(() => {
+  for (const controller of controllers.splice(0)) controller.dispose()
+})
 function controller(port = new FakePort(), now = () => 100) {
   const result = new InboxController(port, { pollIntervalMs: 60_000, debounceMs: 1, now })
   controllers.push(result)
@@ -24,25 +26,32 @@ test("subscribe precedes snapshot; a dirty in-flight result never becomes ready"
   const port = new FakePort()
   const blocked = deferred<Awaited<ReturnType<InboxPort["sessions"]>>>()
   let calls = 0
-  port.sessions = async () => { expect(port.handler).toBeDefined(); return ++calls === 1 ? blocked.promise : { data: [session("new")] } }
+  port.sessions = async () => {
+    expect(port.handler).toBeDefined()
+    return ++calls === 1 ? blocked.promise : { data: [session("new")] }
+  }
   const inbox = controller(port)
   const ready: string[][] = []
-  inbox.subscribe(state => { if (state.phase === "ready") ready.push(state.sessions.map(item => item.id)) })
+  inbox.subscribe((state) => {
+    if (state.phase === "ready") ready.push(state.sessions.map((item) => item.id))
+  })
   inbox.start()
   port.handler!({})
   blocked.resolve({ data: [session("old")] })
   await until(() => inbox.current.phase === "ready")
-  expect(ready.every(ids => !ids.includes("old"))).toBe(true)
+  expect(ready.every((ids) => !ids.includes("old"))).toBe(true)
   expect(inbox.current.sessions[0]?.id).toBe("new")
 })
 test("all inventory pages beyond upstream's 500-session cap, including children", async () => {
   const port = new FakePort()
   const cursors: (string | undefined)[] = []
-  port.sessions = async cursor => {
+  port.sessions = async (cursor) => {
     cursors.push(cursor)
     const page = Number(cursor ?? 0)
-    return { data: Array.from({ length: 100 }, (_, index) => session(`${page}-${index}`, { parentID: "parent" })),
-      next: page < 6 ? String(page + 1) : undefined }
+    return {
+      data: Array.from({ length: 100 }, (_, index) => session(`${page}-${index}`, { parentID: "parent" })),
+      next: page < 6 ? String(page + 1) : undefined,
+    }
   }
   const inbox = controller(port)
   await inbox.refresh()
@@ -58,15 +67,24 @@ test("repeated cursors and failed listing are explicit stale, not empty", async 
   await inbox.refresh()
   expect(inbox.current.phase).toBe("stale")
   expect(inbox.current.sessions).toHaveLength(1)
-  port.sessions = async () => { throw new Error("offline") }
+  port.sessions = async () => {
+    throw new Error("offline")
+  }
   await inbox.refresh()
   expect(inbox.current.phase).toBe("stale")
   expect(inbox.current.sessions).toHaveLength(1)
 })
 test("cross-project resolution, multi-client viewing, rename and deletion reconcile", async () => {
   const port = new FakePort()
-  port.inventory = [session("a"), session("b", { projectID: "project-b", location: { directory: "/b" },
-    outcome: "succeeded", time: { created: 1, updated: 2, idle: 10 } })]
+  port.inventory = [
+    session("a"),
+    session("b", {
+      projectID: "project-b",
+      location: { directory: "/b" },
+      outcome: "succeeded",
+      time: { created: 1, updated: 2, idle: 10 },
+    }),
+  ]
   port.requests.permissions = [{ id: "p", sessionID: "b" }]
   const inbox = controller(port)
   await inbox.refresh()
@@ -83,19 +101,36 @@ test("cross-project resolution, multi-client viewing, rename and deletion reconc
 test("failed location retains its pending badge, while resolved healthy locations clear", async () => {
   const port = new FakePort()
   port.inventory.push(session("b", { location: { directory: "/b" } }))
-  port.pending = async directory => ({ permissions: [{ id: directory, sessionID: directory === "/a" ? "a" : "b" }], questions: [] })
+  port.pending = async (directory) => ({
+    permissions: [{ id: directory, sessionID: directory === "/a" ? "a" : "b" }],
+    questions: [],
+  })
   const inbox = controller(port)
   await inbox.refresh()
-  port.pending = async directory => { if (directory === "/b") throw new Error("unavailable"); return { permissions: [], questions: [] } }
+  port.pending = async (directory) => {
+    if (directory === "/b") throw new Error("unavailable")
+    return { permissions: [], questions: [] }
+  }
   await inbox.refresh()
   expect(inbox.current.phase).toBe("partial")
-  expect(inbox.current.pending.map(item => item.sessionID)).toEqual(["b"])
+  expect(inbox.current.pending.map((item) => item.sessionID)).toEqual(["b"])
 })
 test("location fanout is bounded and sessions in the same worktree share requests", async () => {
   const port = new FakePort()
-  port.inventory = Array.from({ length: 12 }, (_, index) => session(String(index), { location: { directory: `/${index % 6}` } }))
-  let concurrent = 0, peak = 0, calls = 0
-  port.pending = async () => { calls++; concurrent++; peak = Math.max(peak, concurrent); await Bun.sleep(1); concurrent--; return { permissions: [], questions: [] } }
+  port.inventory = Array.from({ length: 12 }, (_, index) =>
+    session(String(index), { location: { directory: `/${index % 6}` } }),
+  )
+  let concurrent = 0,
+    peak = 0,
+    calls = 0
+  port.pending = async () => {
+    calls++
+    concurrent++
+    peak = Math.max(peak, concurrent)
+    await Bun.sleep(1)
+    concurrent--
+    return { permissions: [], questions: [] }
+  }
   await controller(port).refresh()
   expect(calls).toBe(6)
   expect(peak).toBeLessThanOrEqual(4)
@@ -117,9 +152,13 @@ test("disposal aborts requests, unsubscribes, and blocks late publication", asyn
   const port = new FakePort()
   const blocked = deferred<Awaited<ReturnType<InboxPort["sessions"]>>>()
   let signal: AbortSignal | undefined
-  port.sessions = async (_, inputSignal) => { signal = inputSignal; return blocked.promise }
+  port.sessions = async (_, inputSignal) => {
+    signal = inputSignal
+    return blocked.promise
+  }
   const inbox = controller(port)
   inbox.start()
+  await until(() => signal !== undefined)
   inbox.dispose()
   const state = inbox.current
   blocked.resolve({ data: [session("late")] })

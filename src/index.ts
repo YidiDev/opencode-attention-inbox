@@ -1,6 +1,6 @@
 import { Plugin } from "@opencode/plugin"
-import { AttentionInbox } from "./rpc.js"
 import { resolveOptions } from "./options.js"
+import { AttentionInbox } from "./rpc.js"
 
 export default Plugin.define({
   id: "attention-inbox",

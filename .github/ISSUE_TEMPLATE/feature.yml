@@ -1,0 +1,10 @@
+name: Feature request
+description: Propose an improvement to the navigation-only attention inbox.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and desired outcome
+      description: Explain the workflow and alternatives, without private session data.
+    validations:
+      required: true

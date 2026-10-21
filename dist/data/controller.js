@@ -1,3 +1,4 @@
+import { readWithDeadline } from "./deadline.js";
 /** One setup-owned reconciler, not one fetch loop per sidebar mount. */
 export class InboxController {
   snapshot = {
@@ -22,10 +23,17 @@ export class InboxController {
   }
   setPollInterval(interval) {
     this.options.pollIntervalMs = interval;
-    if (this.poll) {
-      clearInterval(this.poll);
-      this.poll = setInterval(() => this.invalidate(), interval);
-    }
+    if (!this.inFlight) this.schedulePoll();
+  }
+  schedulePoll() {
+    if (this.poll) clearTimeout(this.poll);
+    if (!this.stopEvents || this.disposed) return;
+    // Polling is a refresh request, not evidence that an in-flight read is old.
+    // Start the delay after settling, so a slow scan cannot starve forever.
+    this.poll = setTimeout(() => {
+      this.poll = undefined;
+      void this.refresh();
+    }, this.options.pollIntervalMs);
   }
   subscribe(listener) {
     this.listeners.add(listener);
@@ -44,7 +52,6 @@ export class InboxController {
       }
       this.invalidate();
     });
-    this.poll = setInterval(() => this.invalidate(), this.options.pollIntervalMs);
     void this.refresh();
   }
   emit(snapshot) {
@@ -60,11 +67,13 @@ export class InboxController {
       ...this.snapshot,
       phase: this.snapshot.updatedAt === undefined ? "syncing" : "stale"
     });
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      void this.refresh();
-    }, this.options.debounceMs ?? 200);
+    // Leading-edge debounce: continuous events must not postpone a read forever.
+    if (!this.timer && !this.inFlight) {
+      this.timer = setTimeout(() => {
+        this.timer = undefined;
+        void this.refresh();
+      }, this.options.debounceMs ?? 200);
+    }
   }
   refresh() {
     if (this.disposed) return Promise.resolve();
@@ -72,16 +81,25 @@ export class InboxController {
       this.dirty = true;
       return this.inFlight;
     }
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    if (this.poll) {
+      clearTimeout(this.poll);
+      this.poll = undefined;
+    }
     this.dirty = false;
     this.inFlight = this.reconcile().finally(() => {
       this.inFlight = undefined;
-      if (this.dirty && !this.disposed) void this.refresh();
+      if (this.dirty && !this.disposed) void this.refresh();else this.schedulePoll();
     });
     return this.inFlight;
   }
   async reconcile() {
     const generation = this.generation;
     const signal = this.abort.signal;
+    const read = operation => readWithDeadline(signal, this.options.requestTimeoutMs ?? 10_000, operation);
     this.emit({
       ...this.snapshot,
       phase: "syncing"
@@ -91,7 +109,7 @@ export class InboxController {
       let cursor;
       const cursors = new Set();
       do {
-        const page = await this.port.sessions(cursor, signal);
+        const page = await read(signal => this.port.sessions(cursor, signal));
         if (this.disposed) return;
         for (const session of page.data) sessions.set(session.id, session);
         cursor = page.next;
@@ -114,8 +132,10 @@ export class InboxController {
       }, async () => {
         while (index < directories.length && !signal.aborted) {
           const directory = directories[index++];
+          if (directory === undefined) break;
           try {
-            const result = await this.port.pending(directory, signal);
+            const result = await read(signal => this.port.pending(directory, signal));
+            if (this.disposed) return;
             for (const [kind, items] of [["permission", result.permissions], ["question", result.questions]]) {
               for (const item of items) {
                 const key = `${kind}:${item.id}`;
@@ -135,19 +155,17 @@ export class InboxController {
           }
         }
       }));
-      const running = await this.port.active(signal);
+      const running = await read(signal => this.port.active(signal));
       if (this.disposed) return;
-      if (generation !== this.generation) {
-        this.dirty = true;
-        return;
-      }
+      const changed = generation !== this.generation;
+      if (changed) this.dirty = true;
       if (failed) {
         // Unknown pending state must not silently resolve a previously known badge.
         for (const item of this.snapshot.pending) {
           const session = sessions.get(item.sessionID);
           if (!retainedKeys.has(`${item.kind}:${item.id}`) && session && failedDirectories.has(session.location.directory)) pending.push(item);
         }
-      } else {
+      } else if (!changed) {
         for (const key of this.firstSeen.keys()) if (!retainedKeys.has(key)) this.firstSeen.delete(key);
       }
       const orphaned = pending.some(item => !sessions.has(item.sessionID));
@@ -155,7 +173,8 @@ export class InboxController {
         sessions: [...sessions.values()],
         pending,
         running,
-        phase: failed || orphaned ? "partial" : "ready",
+        // Publish progress during event storms without claiming it is current.
+        phase: changed ? "stale" : failed || orphaned ? "partial" : "ready",
         updatedAt: this.now()
       });
     } catch {
@@ -171,7 +190,7 @@ export class InboxController {
     this.abort.abort();
     this.stopEvents?.();
     if (this.timer) clearTimeout(this.timer);
-    if (this.poll) clearInterval(this.poll);
+    if (this.poll) clearTimeout(this.poll);
     this.listeners.clear();
     this.firstSeen.clear();
   }

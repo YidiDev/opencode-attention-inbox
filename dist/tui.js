@@ -2,15 +2,15 @@ import { createComponent as _$createComponent } from "@opentui/solid";
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { deriveRows, scopeRows } from "./attention/derive.js";
+import { projectForDirectory } from "./attention/scope.js";
+import { createAdapter } from "./data/adapter.js";
+import { InboxController } from "./data/controller.js";
 import { resolveOptions } from "./options.js";
 import { AttentionInbox } from "./rpc.js";
-import { InboxController } from "./data/controller.js";
-import { createAdapter } from "./data/adapter.js";
-import { deriveRows, scopeRows, statusLabel } from "./attention/derive.js";
 import { Inbox } from "./ui/inbox.js";
 import { openSession } from "./ui/navigation.js";
-import { safeText } from "./ui/text.js";
-import { projectForDirectory } from "./attention/scope.js";
+import { inboxHealth, pickerOptions } from "./ui/presentation.js";
 export default Plugin.define({
   id: "attention-inbox",
   setup(context) {
@@ -63,26 +63,28 @@ export default Plugin.define({
       return projectForDirectory(directory, context.data.project.list());
     });
     const visibleRows = createMemo(() => scopeRows(rows(), scope(), projectID()));
-    let focusInbox;
+    const health = () => inboxHealth(snapshot().phase, visibleRows().length, scope(), projectID() !== undefined);
+    const focusTargets = new Set();
+    const focusInbox = () => [...focusTargets].reverse().some(focus => focus());
     const selectFallback = async () => {
-      const available = visibleRows();
-      if (!available.length) {
+      if (disposed) return;
+      if (health() === "Nothing needs attention") {
         context.ui.toast.show({
-          message: snapshot().phase === "ready" ? "Nothing needs attention" : "Inbox is still syncing",
+          message: health(),
           variant: "info"
         });
         return;
       }
       const id = await context.ui.dialog.select({
-        title: "Needs attention",
-        options: available.map(row => ({
-          value: row.session.id,
-          title: safeText(row.session.title ?? row.session.id),
-          description: statusLabel(row)
-        }))
+        get title() {
+          return `Needs attention${health() ? ` · ${health()}` : ""}`;
+        },
+        get options() {
+          return pickerOptions(visibleRows());
+        }
       });
       const row = visibleRows().find(row => row.session.id === id);
-      if (row) openSession(context, row);
+      if (!disposed && row) openSession(context, row);
     };
     context.keymap.layer(() => ({
       mode: "global",
@@ -100,7 +102,7 @@ export default Plugin.define({
         palette: true,
         bind: "<leader>o",
         run: () => {
-          if (!focusInbox?.()) return selectFallback();
+          if (!focusInbox()) return selectFallback();
         }
       }, {
         id: "attention-inbox.open-next",
@@ -109,7 +111,7 @@ export default Plugin.define({
         palette: true,
         run: () => {
           const row = visibleRows()[0];
-          if (row) openSession(context, row);
+          if (row) openSession(context, row);else return selectFallback();
         }
       }, {
         id: "attention-inbox.refresh",
@@ -139,7 +141,10 @@ export default Plugin.define({
         },
         toggleScope: toggleScope,
         registerFocus: focus => {
-          focusInbox = focus;
+          focusTargets.add(focus);
+          return () => {
+            focusTargets.delete(focus);
+          };
         }
       })
     });

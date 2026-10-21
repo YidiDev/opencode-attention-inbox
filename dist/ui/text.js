@@ -17,8 +17,25 @@ export function truncate(value, width) {
     if (Bun.stringWidth(result + segment) > limit - 3) break;
     result += segment;
   }
-  return result + "...";
+  return `${result}...`;
 }
 export function directoryLabel(directory) {
   return safeText(directory.split("/").filter(Boolean).slice(-2).join("/"));
+}
+export function truncateTail(value, width) {
+  const text = safeText(value);
+  const limit = Math.max(0, Math.floor(width));
+  if (Bun.stringWidth(text) <= limit) return text;
+  if (limit <= 3) return ".".repeat(limit);
+  let result = "";
+  const segments = [...new Intl.Segmenter(undefined, {
+    granularity: "grapheme"
+  }).segment(text)];
+  for (const {
+    segment
+  } of segments.reverse()) {
+    if (Bun.stringWidth(segment + result) > limit - 3) break;
+    result = segment + result;
+  }
+  return `...${result}`;
 }

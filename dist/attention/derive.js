@@ -27,7 +27,7 @@ export function deriveRows(snapshot, includeChildren = false) {
       questions: questions.length,
       completedIdle,
       rank,
-      since: waiting.length ? Math.min(...waiting.map(item => item.since)) : completedIdle,
+      since: waiting.length ? Math.min(...waiting.map(item => item.since)) : completedIdle ?? 0,
       parentTitle: session.parentID ? sessions.get(session.parentID)?.title : undefined
     });
   }

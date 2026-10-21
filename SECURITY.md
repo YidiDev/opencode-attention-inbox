@@ -1,26 +1,31 @@
 # Security
 
-This plugin runs inside your OpenCode CLI. It reads session metadata and pending
-request lists through the authenticated client provided by that host, across the
-connected server. The API necessarily returns request contents, but the adapter
-immediately drops them; they are not rendered, persisted, or logged.
+This repository is currently private and the npm package is unpublished.
+The supported baseline is Linux x64, Bun 1.4.0 and OpenCode 2.1.4.
 
-Only the scope preference is stored. Titles and path labels are untrusted text:
-terminal controls, ANSI links/colors and bidi overrides are stripped before
-display. Navigation uses session IDs, never shell commands or title text. The
-plugin cannot approve requests or answer questions through its UI.
+## Reporting
 
-The optional server half registers `attention-inbox.settings`, returning only
-bounded configuration. It exposes no filesystem check, session data or custom
-mutation RPC. The plugin does not traverse host renderable internals or read the
-OpenCode database.
+Do not open an issue containing a vulnerability, secret or session data. Repository
+collaborators with access can draft a private advisory at
+https://github.com/YidiDev/opencode-attention-inbox/security/advisories/new
+for owner **YidiDev**. If your access does not permit this, contact the owner using
+your existing private collaboration channel; there is no public reporting mailbox.
+Private vulnerability reporting must be enabled and externally verified before
+the repository is made public. No response-time guarantee is currently offered.
 
-The development install overrides Solid 1.9.12's Seroval dependency to patched
-1.6.3 (GHSA-p6vx-979v-rg4c and GHSA-jp82-f5mq-hwhp). This plugin does not call
-Seroval or bundle Solid/OpenTUI. OpenCode supplies the runtime, so this override
-does not patch the host's own dependencies; keep the host updated separately.
+Include affected versions, a minimal sanitized reproduction and impact. Never
+include real credentials, databases, prompts, answers or unsanitized captures.
 
-This is a private derivative with no npm release, not a release maintained by the original
-session-history authors. Report vulnerabilities privately to this checkout's
-maintainer; do not send derivative reports to the upstream project or include
-credentials/request contents in public issues.
+## Boundaries
+
+The plugin navigates sessions; it does not answer forms or approve permissions.
+It uses the connected host's public authenticated API and native viewed markers.
+Uncertainty remains explicit. Display strings strip terminal controls, and logs
+must not include titles, raw paths or request contents. Preferences alone persist.
+
+Live acceptance uses an isolated authenticated server, allowlisted environment
+and synthetic sessions. Only sanitized text captures may be uploaded by CI.
+Dependencies and history are scanned, but a passing scan is not a security audit.
+The development Seroval override fixes a transitive advisory in the pinned Solid
+toolchain; published output does not bundle Seroval, Solid or OpenTUI. The host
+supplies its runtime, whose security updates remain the host owner's responsibility.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json"
-  // The plugin is installed globally (see README → Installation). To load this
-  // checkout instead of the published package, add:
-  // "plugins": [{ "package": "./src", "options": { "limit": 100, "showMetrics": true, "showAllProjects": true } }]
+  // This file does not install the plugin into your own development session.
+  // Build with `bun run build`, then add the absolute checkout/dist directory
+  // to GLOBAL cli.json as described in README.md. No package is published.
 }

@@ -9,7 +9,8 @@ export const AttentionInbox = Rpc.define({
       output: {
         type: "object",
         properties: { options: { type: "object", additionalProperties: true } },
-        required: ["options"], additionalProperties: false,
+        required: ["options"],
+        additionalProperties: false,
       },
     },
   },

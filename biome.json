@@ -1,0 +1,22 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.0/schema.json",
+  "files": { "includes": ["src/**", "tests/**", "scripts/**", "*.json", "*.jsonc", "!dist"] },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
+  "javascript": { "formatter": { "semicolons": "asNeeded", "quoteStyle": "double" } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": { "enabled": true, "rules": { "recommended": true } },
+  "overrides": [
+    {
+      "includes": ["tests/**", "scripts/live-smoke.ts"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    },
+    {
+      "includes": ["src/ui/inbox.tsx"],
+      "linter": { "rules": { "a11y": { "noStaticElementInteractions": "off" } } }
+    },
+    {
+      "includes": ["src/ui/text.ts"],
+      "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
+    }
+  ]
+}

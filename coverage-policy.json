@@ -1,0 +1,5 @@
+{
+  "default": { "lines": 95, "branches": 85, "functions": 95 },
+  "typeOnly": ["src/attention/model.ts", "src/data/port.ts"],
+  "files": {}
+}

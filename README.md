@@ -12,6 +12,22 @@ bottom of the right sidebar and updates without switching away from your work.
 No inline approval, automatic answers, notifications, transcript fetching, or
 communicator integration. This is not session history or multi-server aggregation.
 
+Example from the isolated packed-plugin acceptance run (fixture paths shortened):
+
+```text
+Needs attention 3
+All projects ↔
+Fixture foreign question
+Permission · Question
+…/b
+Fixture worktree question
+Question
+…/tree
+Fixture completed
+Done · unread
+…/a
+```
+
 ## Local installation
 
 Built against **OpenCode 2.1.4**, Bun **1.4.0**, Linux x64. The V2 plugin API is
@@ -21,6 +37,7 @@ the npm package is unpublished.
 ```sh
 cd /path/to/opencode-attention-inbox
 bun install --frozen-lockfile
+bun run build
 bun run check
 ```
 
@@ -97,8 +114,11 @@ IDs break ties, so refreshes do not shuffle equal-priority rows.
   remain until native resolution/cancellation. Archived sessions still appear
   for unresolved blocking requests, but not ordinary completions.
 - Ordinary child completions are hidden by default; child requests show the
-  parent context and navigate to the actual child, without duplicating its badge
-  on the parent.
+  parent context and pass the actual child's ID to the native router, without
+  duplicating its badge on the parent. OpenCode 2.1.4 displays child navigation
+  in its native **Subagents** panel rather than a separate root-session tab.
+  Inactive children can require the panel's **show inactive** control; this
+  plugin cannot bypass that host UI or answer the child's request itself.
 - Native pending requests do not expose creation times. Requests present at
   startup use first-observation time, with stable ID ordering for ties. Live
   request events supply their native creation timestamps. This ordering metadata
@@ -113,6 +133,10 @@ the TUI's incomplete session cache or stop at 500 sessions. Relevant events
 invalidate the snapshot with a 200 ms debounce; a periodic full reconciliation
 recovers missed events and disconnections.
 
+Polling waits for the previous scan to settle. Each API read has a 10-second
+deadline and cancellation; failed parallel reads cancel their sibling. Continuous
+events can publish useful progress as **Stale**, never falsely as current.
+
 **Syncing**, **Partial**, **Stale**, and a `?` count qualifier explicitly indicate
 uncertainty; they are not a verified empty inbox. Failed reads preserve last-known
 data. A failed location retains its last-known unresolved badges. Refresh from
@@ -125,6 +149,8 @@ unresolved rather than silently broadening the filter. Scope changes never delet
 backing state or acknowledge anything.
 
 The maximum visible row count is clamped to 1–8 (default 4); scroll for more.
+Only the visible window plus two overscan rows is mounted. Refreshes preserve
+manual scroll position, and the narrow-terminal picker updates while open.
 Polling is clamped to 5–300 seconds. The plugin stores only the scope preference,
 keeps attention metadata in memory, strips terminal control sequences from
 display strings, and does not log session titles, paths, or request contents.
@@ -132,7 +158,8 @@ display strings, and does not log session titles, paths, or request contents.
 ## Development
 
 ```sh
-bun run check        # TypeScript, Solid build, unit/integration/package tests
+bun run build        # refresh committed dist after source changes
+bun run check        # format, lint, types, tests, per-file coverage, dist freshness
 bun run test:live    # opt-in isolated real OpenCode + tmux, no model credentials
 ```
 
@@ -148,6 +175,9 @@ dedicated tmux socket. It does not touch your normal sessions or configuration.
 Text captures stay in the printed temporary evidence directory; the test stops
 only its own server and tmux instance. Requires `opencode`, `tmux`, `git`, `npm`,
 and `tar` on PATH.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for CI, compatibility, security checks,
+and the release checklist, and [CHANGELOG.md](CHANGELOG.md) for changes.
 
 ## Attribution
 

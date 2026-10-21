@@ -10,13 +10,17 @@ import { usePlugin } from "@opencode/plugin/tui";
 import { RenderableEvents } from "@opentui/core";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { statusLabel } from "../attention/derive.js";
-import { directoryLabel, truncate } from "./text.js";
 import { openSession } from "./navigation.js";
+import { inboxHealth, rowContext, rowWindow } from "./presentation.js";
+import { truncate } from "./text.js";
 export function Inbox(props) {
   const context = usePlugin();
   const [selected, setSelected] = createSignal();
   const [width, setWidth] = createSignal(34);
   const [focused, setFocused] = createSignal(false);
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const byID = createMemo(() => new Map(props.rows.map(row => [row.session.id, row])));
+  const window = createMemo(() => rowWindow(props.rows.map(row => row.session.id), scrollTop(), props.maxVisibleRows));
   let box;
   let scroll;
   let previous = null;
@@ -28,6 +32,7 @@ export function Inbox(props) {
     box?.focus();
     setFocused(true);
     if (!selected()) setSelected(props.rows[0]?.session.id);
+    revealSelection();
     return true;
   };
   const dismiss = () => {
@@ -36,17 +41,24 @@ export function Inbox(props) {
     if (previous && !previous.isDestroyed) previous.focus();
     previous = null;
   };
-  props.registerFocus(focus);
+  const unregisterFocus = props.registerFocus(focus);
   onCleanup(() => {
-    props.registerFocus(undefined);
+    unregisterFocus();
     if (box?.focused) dismiss();
   });
   createEffect(() => {
     const rows = props.rows;
     if (!rows.some(row => row.session.id === selected())) setSelected(rows[0]?.session.id);
-    const id = selected();
-    if (id) scroll?.scrollChildIntoView(`attention-inbox-${id}`);
   });
+  const syncScroll = () => setScrollTop(scroll?.scrollTop ?? 0);
+  function revealSelection() {
+    const index = props.rows.findIndex(row => row.session.id === selected());
+    if (!scroll || index < 0) return;
+    const top = index * 3;
+    const height = scroll.viewport.height || props.maxVisibleRows * 3;
+    if (top < scroll.scrollTop) scroll.scrollTo(top);else if (top + 3 > scroll.scrollTop + height) scroll.scrollTo(top + 3 - height);
+    syncScroll();
+  }
   const activate = row => {
     dismiss();
     openSession(context, row);
@@ -56,9 +68,13 @@ export function Inbox(props) {
   const move = delta => {
     const index = props.rows.findIndex(row => row.session.id === selected());
     const row = props.rows[Math.max(0, Math.min(props.rows.length - 1, index + delta))];
-    if (row) setSelected(row.session.id);
+    if (row) {
+      setSelected(row.session.id);
+      revealSelection();
+    }
   };
   context.keymap.layer(() => ({
+    mode: "global",
     target: () => box,
     priority: 10,
     commands: [{
@@ -86,20 +102,11 @@ export function Inbox(props) {
       run: props.toggleScope
     }]
   }));
-  const health = createMemo(() => {
-    if (props.scope === "project" && !props.projectKnown) return "Resolving current project...";
-    switch (props.snapshot.phase) {
-      case "syncing":
-        return "Syncing...";
-      case "partial":
-        return "Partial · still checking";
-      case "stale":
-        return "Stale · refresh to retry";
-      case "ready":
-        return props.rows.length ? "" : "Nothing needs attention";
-    }
-  });
-  const measure = () => setWidth(Math.max(0, scroll?.viewport.width ?? (box?.width ?? 36) - 2));
+  const health = () => inboxHealth(props.snapshot.phase, props.rows.length, props.scope, props.projectKnown);
+  const measure = () => {
+    const viewport = scroll && !scroll.isDestroyed ? scroll.viewport.width : 0;
+    setWidth(Math.max(1, viewport || (box?.width ?? 36) - 2));
+  };
   return (() => {
     var _el$ = _$createElement("box"),
       _el$2 = _$createElement("text"),
@@ -122,7 +129,7 @@ export function Inbox(props) {
       if (event.button === 0) focus();
     });
     _$setProp(_el$2, "wrapMode", "none");
-    _$insert(_el$2, () => truncate(`Needs attention  ${props.rows.length}${props.snapshot.phase !== "ready" ? " · ?" : ""}`, width()));
+    _$insert(_el$2, () => truncate(`Needs attention  ${props.rows.length}${props.snapshot.phase !== "ready" || props.scope === "project" && !props.projectKnown ? " · ?" : ""}`, width()));
     _$setProp(_el$3, "wrapMode", "none");
     _$setProp(_el$3, "onMouseUp", event => {
       if (event.button === 0) props.toggleScope();
@@ -145,66 +152,98 @@ export function Inbox(props) {
         return props.rows.length;
       },
       get children() {
-        var _el$5 = _$createElement("scrollbox");
+        var _el$5 = _$createElement("scrollbox"),
+          _el$6 = _$createElement("box"),
+          _el$7 = _$createElement("box");
+        _$insertNode(_el$5, _el$6);
+        _$insertNode(_el$5, _el$7);
         _$use(value => {
           scroll = value;
           measure();
+          value.verticalScrollBar.on("change", syncScroll);
+          onCleanup(() => value.verticalScrollBar.off("change", syncScroll));
         }, _el$5);
-        _$setProp(_el$5, "onSizeChange", measure);
+        _$setProp(_el$5, "onSizeChange", () => {
+          measure();
+          syncScroll();
+        });
+        _$setProp(_el$5, "onMouseScroll", () => queueMicrotask(syncScroll));
         _$setProp(_el$5, "flexShrink", 1);
+        _$setProp(_el$6, "flexShrink", 0);
         _$insert(_el$5, _$createComponent(For, {
           get each() {
-            return props.rows;
+            return window().ids;
           },
-          children: row => {
-            const active = () => selected() === row.session.id && focused();
+          children: id => {
+            const row = () => byID().get(id);
+            const status = () => {
+              const current = row();
+              return current ? statusLabel(current) : "";
+            };
+            const label = () => {
+              const current = row();
+              return current ? rowContext(current, width()) : "";
+            };
+            const active = () => selected() === id && focused();
             return (() => {
-              var _el$7 = _$createElement("box"),
-                _el$8 = _$createElement("text"),
-                _el$9 = _$createElement("text"),
-                _el$0 = _$createElement("text");
-              _$insertNode(_el$7, _el$8);
-              _$insertNode(_el$7, _el$9);
-              _$insertNode(_el$7, _el$0);
-              _$setProp(_el$7, "flexDirection", "column");
-              _$setProp(_el$7, "height", 3);
-              _$setProp(_el$7, "flexShrink", 0);
-              _$setProp(_el$7, "onMouseDown", event => {
+              var _el$9 = _$createElement("box"),
+                _el$0 = _$createElement("text"),
+                _el$1 = _$createElement("text"),
+                _el$10 = _$createElement("text");
+              _$insertNode(_el$9, _el$0);
+              _$insertNode(_el$9, _el$1);
+              _$insertNode(_el$9, _el$10);
+              _$setProp(_el$9, "id", `attention-inbox-${id}`);
+              _$setProp(_el$9, "flexDirection", "column");
+              _$setProp(_el$9, "height", 3);
+              _$setProp(_el$9, "flexShrink", 0);
+              _$setProp(_el$9, "onMouseDown", event => {
                 if (event.button === 0) {
                   focus();
-                  setSelected(row.session.id);
+                  setSelected(id);
                 }
               });
-              _$setProp(_el$7, "onMouseUp", event => {
-                if (event.button === 0) activate(row);
+              _$setProp(_el$9, "onMouseUp", event => {
+                const current = row();
+                if (event.button === 0 && current) activate(current);
               });
-              _$setProp(_el$8, "wrapMode", "none");
-              _$insert(_el$8, () => truncate(`${active() ? "› " : ""}${row.session.title?.trim() || "Untitled session"}`, width()));
-              _$setProp(_el$9, "wrapMode", "none");
-              _$insert(_el$9, () => truncate(statusLabel(row), width()));
               _$setProp(_el$0, "wrapMode", "none");
-              _$insert(_el$0, () => truncate(`${directoryLabel(row.session.location.directory)}${row.session.parentID ? ` · child of ${row.parentTitle ?? row.session.parentID}` : ""}`, width()));
+              _$insert(_el$0, () => truncate(`${active() ? "› " : ""}${row()?.session.title?.trim() || "Untitled session"}`, width()));
+              _$setProp(_el$1, "wrapMode", "none");
+              _$insert(_el$1, () => truncate(status(), width()));
+              _$setProp(_el$10, "wrapMode", "none");
+              _$insert(_el$10, label);
               _$effect(_p$ => {
-                var _v$4 = `attention-inbox-${row.session.id}`,
-                  _v$5 = active() ? context.theme.text.strong : context.theme.text.base,
-                  _v$6 = context.theme.text.feedback.warning.base,
-                  _v$7 = context.theme.text.muted;
-                _v$4 !== _p$.e && (_p$.e = _$setProp(_el$7, "id", _v$4, _p$.e));
-                _v$5 !== _p$.t && (_p$.t = _$setProp(_el$8, "fg", _v$5, _p$.t));
-                _v$6 !== _p$.a && (_p$.a = _$setProp(_el$9, "fg", _v$6, _p$.a));
-                _v$7 !== _p$.o && (_p$.o = _$setProp(_el$0, "fg", _v$7, _p$.o));
+                var _v$7 = active() ? context.theme.text.strong : context.theme.text.base,
+                  _v$8 = context.theme.text.feedback.warning.base,
+                  _v$9 = context.theme.text.muted;
+                _v$7 !== _p$.e && (_p$.e = _$setProp(_el$0, "fg", _v$7, _p$.e));
+                _v$8 !== _p$.t && (_p$.t = _$setProp(_el$1, "fg", _v$8, _p$.t));
+                _v$9 !== _p$.a && (_p$.a = _$setProp(_el$10, "fg", _v$9, _p$.a));
                 return _p$;
               }, {
                 e: undefined,
                 t: undefined,
-                a: undefined,
-                o: undefined
+                a: undefined
               });
-              return _el$7;
+              return _el$9;
             })();
           }
-        }));
-        _$effect(_$p => _$setProp(_el$5, "maxHeight", props.maxVisibleRows * 3, _$p));
+        }), _el$7);
+        _$setProp(_el$7, "flexShrink", 0);
+        _$effect(_p$ => {
+          var _v$ = props.maxVisibleRows * 3,
+            _v$2 = window().before,
+            _v$3 = window().after;
+          _v$ !== _p$.e && (_p$.e = _$setProp(_el$5, "maxHeight", _v$, _p$.e));
+          _v$2 !== _p$.t && (_p$.t = _$setProp(_el$6, "height", _v$2, _p$.t));
+          _v$3 !== _p$.a && (_p$.a = _$setProp(_el$7, "height", _v$3, _p$.a));
+          return _p$;
+        }, {
+          e: undefined,
+          t: undefined,
+          a: undefined
+        });
         return _el$5;
       }
     }), null);
@@ -213,20 +252,20 @@ export function Inbox(props) {
         return focused();
       },
       get children() {
-        var _el$6 = _$createElement("text");
-        _$setProp(_el$6, "wrapMode", "none");
-        _$insert(_el$6, () => truncate("↑↓ select · Enter open · Esc back", width()));
-        _$effect(_$p => _$setProp(_el$6, "fg", context.theme.text.muted, _$p));
-        return _el$6;
+        var _el$8 = _$createElement("text");
+        _$setProp(_el$8, "wrapMode", "none");
+        _$insert(_el$8, () => truncate("↑↓ select · Enter open · Esc back", width()));
+        _$effect(_$p => _$setProp(_el$8, "fg", context.theme.text.muted, _$p));
+        return _el$8;
       }
     }), null);
     _$effect(_p$ => {
-      var _v$ = context.theme.border.base,
-        _v$2 = context.theme.text.strong,
-        _v$3 = context.theme.text.muted;
-      _v$ !== _p$.e && (_p$.e = _$setProp(_el$, "borderColor", _v$, _p$.e));
-      _v$2 !== _p$.t && (_p$.t = _$setProp(_el$2, "fg", _v$2, _p$.t));
-      _v$3 !== _p$.a && (_p$.a = _$setProp(_el$3, "fg", _v$3, _p$.a));
+      var _v$4 = context.theme.border.base,
+        _v$5 = context.theme.text.strong,
+        _v$6 = context.theme.text.muted;
+      _v$4 !== _p$.e && (_p$.e = _$setProp(_el$, "borderColor", _v$4, _p$.e));
+      _v$5 !== _p$.t && (_p$.t = _$setProp(_el$2, "fg", _v$5, _p$.t));
+      _v$6 !== _p$.a && (_p$.a = _$setProp(_el$3, "fg", _v$6, _p$.a));
       return _p$;
     }, {
       e: undefined,

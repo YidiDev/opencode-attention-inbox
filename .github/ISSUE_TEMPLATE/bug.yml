@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem without private session data.
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Versions and platform
+      description: OpenCode, plugin commit/version, Bun, OS and architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction and expected behavior
+      description: Include scope, tabs/sidebar settings and terminal dimensions if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Remove titles, raw paths, prompts, request contents and credentials. Do not attach databases.

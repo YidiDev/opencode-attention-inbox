@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinDevDependencies"],
+  "enabledManagers": ["npm", "github-actions"],
+  "pinDigests": true,
+  "automerge": false,
+  "packageRules": [
+    {
+      "matchPackageNames": ["@opencode/plugin", "@opencode/client"],
+      "groupName": "OpenCode host contract",
+      "description": "Update the host artifact pin and compatibility evidence together."
+    }
+  ]
+}

@@ -23,12 +23,13 @@
  * Output is one file per input (no bundling) so the relative imports between
  * the UI, model and adapters stay relative and both entries share `rpc.js`.
  */
-import { transformAsync } from "@babel/core"
-import presetTypeScript from "@babel/preset-typescript"
-import presetSolid from "babel-preset-solid"
+
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { transformAsync } from "@babel/core"
+import presetTypeScript from "@babel/preset-typescript"
+import presetSolid from "babel-preset-solid"
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url))
 const sourceDir = join(projectRoot, "src")
@@ -69,7 +70,8 @@ export async function build(outDir: string = defaultOutDir): Promise<string[]> {
       presets,
     })
     const code = transformed?.code
-    if (code === undefined || code === null) throw new Error(`babel produced no output for ${relative(sourceDir, file)}`)
+    if (code === undefined || code === null)
+      throw new Error(`babel produced no output for ${relative(sourceDir, file)}`)
 
     const target = join(outDir, relative(sourceDir, file).replace(SCRIPT, ".js"))
     await mkdir(dirname(target), { recursive: true })

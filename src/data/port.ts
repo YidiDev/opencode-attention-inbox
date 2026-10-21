@@ -5,7 +5,10 @@ export interface Invalidation {
 }
 export interface InboxPort {
   sessions(cursor: string | undefined, signal: AbortSignal): Promise<{ data: Session[]; next?: string }>
-  pending(directory: string, signal: AbortSignal): Promise<{
+  pending(
+    directory: string,
+    signal: AbortSignal,
+  ): Promise<{
     permissions: { id: string; sessionID: string }[]
     questions: { id: string; sessionID: string }[]
   }>
