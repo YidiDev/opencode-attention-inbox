@@ -21,8 +21,7 @@
  * ids that only resolve inside the host process.
  *
  * Output is one file per input (no bundling) so the relative imports between
- * `tui.tsx`, `index.ts`, `rpc.ts`, `directory.ts`, `options.ts` and
- * `sessions.ts` stay relative and both entries keep sharing a single `rpc.js`.
+ * the UI, model and adapters stay relative and both entries share `rpc.js`.
  */
 import { transformAsync } from "@babel/core"
 import presetTypeScript from "@babel/preset-typescript"

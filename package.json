@@ -1,23 +1,24 @@
 {
-  "name": "opencode-session-history",
-  "version": "0.1.5",
-  "description": "OpenCode V2 CLI plugin: a sidebar session-history panel with click-to-resume.",
+  "name": "opencode-attention-inbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenCode V2 sidebar inbox for permissions, questions and unread completions.",
   "type": "module",
   "license": "MIT",
-  "author": "ypxcs",
-  "homepage": "https://github.com/ypxcs/opencode-session-history#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ypxcs/opencode-session-history.git"
+    "url": "git+https://github.com/YidiDev/opencode-attention-inbox.git"
   },
+  "homepage": "https://github.com/YidiDev/opencode-attention-inbox#readme",
   "bugs": {
-    "url": "https://github.com/ypxcs/opencode-session-history/issues"
+    "url": "https://github.com/YidiDev/opencode-attention-inbox/issues"
   },
   "files": [
     "dist",
     "src",
     "README.md",
     "LICENSE",
+    "NOTICE",
     "SECURITY.md"
   ],
   "keywords": [
@@ -26,7 +27,7 @@
     "plugin",
     "tui",
     "sessions",
-    "history"
+    "attention"
   ],
   "exports": {
     ".": "./dist/index.js",
@@ -35,26 +36,32 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun run tests/run.ts",
+    "test": "bun test tests",
+    "test:live": "bun run scripts/live-smoke.ts",
+    "check": "bun run typecheck && bun run build && bun test tests",
     "audit": "bun audit",
-    "prepublishOnly": "bun run build && bun run typecheck && bun run tests/run.ts"
+    "prepublishOnly": "bun run check"
   },
   "dependencies": {
-    "@opencode/plugin": "2.0.31"
+    "@opencode/plugin": "2.1.4"
   },
   "peerDependencies": {
-    "@opentui/core": "0.5.17",
-    "@opentui/solid": "0.5.17",
+    "@opentui/core": ">=0.6.6 <0.7.0",
+    "@opentui/solid": ">=0.6.6 <0.7.0",
     "solid-js": "1.9.12"
+  },
+  "overrides": {
+    "seroval": "1.6.3"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
     "@babel/preset-typescript": "7.27.1",
-    "@opencode/client": "2.0.31",
-    "@opentui/solid": "^0.5.17",
+    "@opencode/client": "2.1.4",
+    "@opentui/solid": "^0.6.6",
     "@types/node": "^26.6.5",
     "babel-preset-solid": "1.9.12",
-    "solid-js": "^1.9.12",
+    "solid-js": "1.9.12",
+    "@types/bun": "^1.4.0",
     "typescript": "^5.6.0"
   }
 }

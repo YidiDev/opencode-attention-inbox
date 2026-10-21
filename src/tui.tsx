@@ -1,571 +1,105 @@
 /** @jsxImportSource @opentui/solid */
-import { Plugin, usePlugin } from "@opencode/plugin/tui"
-import type { SessionInfo } from "@opencode/client"
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { createSignal, createMemo, For, Show, onCleanup, createEffect } from "solid-js"
-import {
-  MAX_DIRECTORIES,
-  SessionHistory,
-  type SessionHistoryCheckOutput,
-  type SessionHistorySettingsOutput,
-} from "./rpc.js"
-import {
-  filterSessions,
-  HOME_PANEL_MAX_WIDTH,
-  homePanelWidth,
-  mergeSessions,
-  projectLabel,
-  scopeToCurrentProject,
-  sessionListHeight,
-  truncateToWidth,
-} from "./sessions.js"
-import { resolveOptions } from "./options.js"
+import { Plugin } from "@opencode/plugin/tui"
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { resolveOptions, type Scope } from "./options.js"
+import { AttentionInbox } from "./rpc.js"
+import { InboxController } from "./data/controller.js"
+import { createAdapter } from "./data/adapter.js"
+import { deriveRows, scopeRows, statusLabel } from "./attention/derive.js"
+import { Inbox } from "./ui/inbox.js"
+import { openSession } from "./ui/navigation.js"
+import { safeText } from "./ui/text.js"
+import { projectForDirectory } from "./attention/scope.js"
 
-/**
- * CLI plugin: append a Session History panel into the built-in sidebar.
- *
- * Behavior:
- *  - Lists sessions across every project, newest first, by default. When
- *    `options.showAllProjects` is false it is scoped to the current project.
- *  - Search box filters by title, id, project, or directory. OpenCode's
- *    renderer disables click-to-focus and the slot host does not focus plugin
- *    content, so the field is focused on click; escape clears the query, then
- *    blurs back to the prompt. Arrow/Enter navigation is scoped to the field so
- *    the prompt keeps those keys.
- *  - Click/Enter on a row: if the session is already open in a tab, focus
- *    it; otherwise open + focus the tab. When tabs are disabled, fall back
- *    to router.navigate({ type: "session" }).
- *  - Sessions whose working directory is gone on the server are dimmed and
- *    marked "✗ missing" in red. Activating one warns first (a dismissible 3s
- *    toast that never navigates); activating it again opens it anyway. This is
- *    not "deleted" — that is a different state (the session record itself),
- *    which never appears in the list.
- *
- * Listing: `context.data.session.list()` only reflects the sessions the CLI has
- * already cached (often none in a fresh TUI), so the panel also pages the full
- * server index via `context.client.session.list({})` and merges the reactive
- * cache on top. Project scope filters that combined list.
- */
 export default Plugin.define({
-  id: "session-history",
+  id: "attention-inbox",
   setup(context) {
-    const [serverOptions, setServerOptions] = createSignal<Readonly<Record<string, unknown>>>({})
-    // OpenCode delivers config options to the server half only. The server
-    // answers them over `settings`; `context.options` wins if OpenCode ever
-    // starts populating the TUI half too.
-    const settings = createMemo(() => resolveOptions(serverOptions(), context.options))
+    const [serverOptions, setServerOptions] = createSignal<Record<string, unknown>>({})
+    const options = createMemo(() => resolveOptions(serverOptions(), context.options))
+    const [preferences, updatePreferences] = context.storage.store<{ scope?: Scope }>("preferences", { initial: {} })
+    const scope = () => preferences.scope === "all" || preferences.scope === "project"
+      ? preferences.scope : options().defaultScope
+    const toggleScope = () => {
+      void updatePreferences(draft => { draft.scope = scope() === "all" ? "project" : "all" }).catch(() => {
+        context.ui.toast.show({ message: "Could not save inbox scope", variant: "error" })
+      })
+    }
 
-    let settingsRetry: ReturnType<typeof setTimeout> | undefined
-    let settingsAttempts = 0
+    let disposed = false
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
     const loadSettings = async () => {
-      const rpc = context.client.rpc(SessionHistory)
-      const location = context.location ?? context.data.location.default()
-      const result = (await rpc.settings({}, { location })) as SessionHistorySettingsOutput
-      setServerOptions({ ...result.options })
+      try {
+        const result = await context.client.rpc(AttentionInbox).settings({}, {
+          location: context.location ?? context.data.location.default(),
+        }) as { options: Record<string, unknown> }
+        if (!disposed) setServerOptions(result.options)
+      } catch (error) {
+        if (!disposed && ++attempts < 15 && (error as { type?: string })?.type !== "rpc.method_not_found") {
+          retry = setTimeout(() => void loadSettings(), 1000)
+        }
+      }
     }
-    const retrySettings = (error: unknown) => {
-      const type = (error as { type?: string } | undefined)?.type
-      // A missing method means the server half predates this TUI half; retrying
-      // cannot help. Everything else (mainly `rpc.unavailable` while the
-      // location activates) is retried a bounded number of times.
-      if (type === "rpc.method_not_found" || settingsAttempts >= 15) return
-      settingsAttempts++
-      settingsRetry = setTimeout(() => void loadSettings().catch(retrySettings), 1000)
-    }
-    void loadSettings().catch(retrySettings)
-    onCleanup(() => {
-      if (settingsRetry !== undefined) clearTimeout(settingsRetry)
-    })
-
-    // Ensure the project store is populated; the session list itself pages the
-    // server index, so it does not depend on the CLI's cache being warm.
+    void loadSettings()
     void context.data.project.sync().catch(() => {})
-
-    const stopCreated = context.data.on("session.created", () => {
-      // Session lifecycle event triggers a refresh. The data store is
-      // reactive and already reflects most fields; this just nudges the UI.
-      void context.data.project.sync().catch(() => {})
+    const controller = new InboxController(createAdapter(context), { pollIntervalMs: options().pollIntervalMs })
+    createEffect(() => controller.setPollInterval(options().pollIntervalMs))
+    const [snapshot, setSnapshot] = createSignal(controller.current)
+    const stopSnapshot = controller.subscribe(setSnapshot)
+    const rows = createMemo(() => deriveRows(snapshot(), options().includeChildCompletions))
+    const projectID = createMemo(() => {
+      const route = context.ui.router.current()
+      if (route.type === "session") {
+        return snapshot().sessions.find(session => session.id === route.sessionID)?.projectID ??
+          context.data.session.get(route.sessionID)?.projectID
+      }
+      const directory = (context.location ?? context.data.location.default()).directory
+      return projectForDirectory(directory, context.data.project.list())
     })
-    const stopRenamed = context.data.on("session.renamed", () => {
-      void context.data.project.sync().catch(() => {})
-    })
-    const stopMetadataUpdated = context.data.on("session.metadata.updated", () => {
-      void context.data.project.sync().catch(() => {})
-    })
-    const stopUsageUpdated = context.data.on("session.usage.updated", () => {
-      void context.data.project.sync().catch(() => {})
-    })
-    const stopDeleted = context.data.on("session.deleted", () => {
-      void context.data.project.sync().catch(() => {})
-    })
-
-    onCleanup(() => {
-      stopCreated()
-      stopRenamed()
-      stopMetadataUpdated()
-      stopUsageUpdated()
-      stopDeleted()
-    })
-
-    const disposeSidebar = context.ui.slot({
-      append: "sidebar.content",
-      render: (input) => (
-        <SidebarHistory
-          activeSessionID={input.sessionID}
-          limit={settings().limit}
-          maxVisibleSessions={settings().maxVisibleSessions}
-          truncateSessionTitles={settings().truncateSessionTitles}
-          showMetrics={settings().showMetrics}
-          showAllProjects={settings().showAllProjects}
-          width={HOME_PANEL_MAX_WIDTH - PANEL_TEXT_INSET}
-        />
-      ),
-    })
-
-    // The CLI only renders a sidebar inside the session route, so the same
-    // list is surfaced on the home screen through the global `app` slot.
-    const disposeHome = context.ui.slot({
-      append: "app",
-      render: () => (
-        <HomeHistoryPanel
-          limit={settings().limit}
-          maxVisibleSessions={settings().maxVisibleSessions}
-          truncateSessionTitles={settings().truncateSessionTitles}
-          showMetrics={settings().showMetrics}
-          showAllProjects={settings().showAllProjects}
-        />
-      ),
-    })
-
-    return () => {
-      disposeSidebar()
-      disposeHome()
+    const visibleRows = createMemo(() => scopeRows(rows(), scope(), projectID()))
+    let focusInbox: (() => boolean) | undefined
+    const selectFallback = async () => {
+      const available = visibleRows()
+      if (!available.length) {
+        context.ui.toast.show({ message: snapshot().phase === "ready" ? "Nothing needs attention" : "Inbox is still syncing", variant: "info" })
+        return
+      }
+      const id = await context.ui.dialog.select({
+        title: "Needs attention",
+        options: available.map(row => ({ value: row.session.id,
+          title: safeText(row.session.title ?? row.session.id), description: statusLabel(row) })),
+      })
+      const row = visibleRows().find(row => row.session.id === id)
+      if (row) openSession(context, row)
     }
+    context.keymap.layer(() => ({
+      mode: "global",
+      commands: [
+        { id: "attention-inbox.scope.toggle", title: "Inbox: toggle project / all projects", group: "Attention inbox",
+          palette: true, bind: "<leader>v", run: toggleScope },
+        { id: "attention-inbox.focus", title: "Inbox: focus needs attention", group: "Attention inbox",
+          palette: true, bind: "<leader>o", run: () => {
+            if (!focusInbox?.()) return selectFallback()
+          } },
+        { id: "attention-inbox.open-next", title: "Inbox: open next session", group: "Attention inbox",
+          palette: true, run: () => { const row = visibleRows()[0]; if (row) openSession(context, row) } },
+        { id: "attention-inbox.refresh", title: "Inbox: refresh", group: "Attention inbox",
+          palette: true, run: () => controller.invalidate() },
+      ],
+    }))
+    const stopSlot = context.ui.slot({
+      append: "sidebar.footer",
+      render: () => <Inbox rows={visibleRows()} snapshot={snapshot()} scope={scope()}
+        projectKnown={projectID() !== undefined} maxVisibleRows={options().maxVisibleRows}
+        toggleScope={toggleScope} registerFocus={focus => { focusInbox = focus }} />,
+    })
+    controller.start()
+    onCleanup(() => {
+      disposed = true
+      if (retry) clearTimeout(retry)
+      stopSlot()
+      stopSnapshot()
+      controller.dispose()
+    })
   },
 })
-
-const PAGE_SIZE = 100
-const MAX_FETCH = 500
-/** Horizontal padding (1 each side) plus the scrollbar gutter. */
-const PANEL_TEXT_INSET = 3
-
-/**
- * Home-screen session panel. The CLI renders the sidebar only inside the
- * session route, so on the home route we mount the same list into the global
- * `app` slot as an overlay pinned to the right margin. The width is derived so
- * it never covers the centered home content; below that it stays hidden.
- */
-function HomeHistoryPanel(props: {
-  limit: number
-  maxVisibleSessions: number
-  truncateSessionTitles: boolean
-  showMetrics: boolean
-  showAllProjects: boolean
-}) {
-  const context = usePlugin()
-  const [terminalWidth, setTerminalWidth] = createSignal(context.renderer.terminalWidth)
-
-  // The renderer width is a plain getter, so track resizes to show/hide the
-  // panel as the terminal grows or shrinks.
-  const onResize = () => setTerminalWidth(context.renderer.terminalWidth)
-  context.renderer.on("resize", onResize)
-  onCleanup(() => context.renderer.off("resize", onResize))
-
-  const panelWidth = createMemo(() => homePanelWidth(terminalWidth()))
-  const visible = createMemo(() => panelWidth() > 0 && context.ui.router.current().type === "home")
-
-  return (
-    <Show when={visible()}>
-      <box
-        position="absolute"
-        top={0}
-        right={0}
-        height="100%"
-        width={panelWidth()}
-        backgroundColor={context.theme.background?.raised?.base}
-      >
-        <SidebarHistory
-          activeSessionID={undefined}
-          limit={props.limit}
-          maxVisibleSessions={props.maxVisibleSessions}
-          truncateSessionTitles={props.truncateSessionTitles}
-          showMetrics={props.showMetrics}
-          showAllProjects={props.showAllProjects}
-          width={Math.max(0, panelWidth() - PANEL_TEXT_INSET)}
-          align="center"
-        />
-      </box>
-    </Show>
-  )
-}
-
-function SidebarHistory(props: {
-  activeSessionID: string | undefined
-  limit: number
-  maxVisibleSessions: number
-  truncateSessionTitles: boolean
-  showMetrics: boolean
-  showAllProjects: boolean
-  /** Fallback content width until the scrollbox has been laid out. */
-  width: number
-  /** Vertical placement of the whole block. The sidebar uses "top"; the home panel centers it. */
-  align?: "top" | "center"
-}) {
-  const context = usePlugin()
-  const [query, setQuery] = createSignal("")
-  const [stale, setStale] = createSignal<ReadonlyMap<string, boolean>>(new Map())
-  const [activeRow, setActiveRow] = createSignal<string | undefined>(undefined)
-  const [remote, setRemote] = createSignal<readonly SessionInfo[]>([])
-  // Session the user has already been warned about; activating it again opens
-  // it anyway (see `activate`).
-  const [pendingOpen, setPendingOpen] = createSignal<string | undefined>(undefined)
-
-  // The filter input is focused explicitly. OpenCode's renderer disables
-  // click-to-focus (autoFocus: false) and the slot host does not focus plugin
-  // content, so an unfocused <input> never receives keystrokes. Focus it on
-  // click and leave it with escape so it never steals focus from the prompt.
-  let inputRef: InputRenderable | undefined
-  let scrollRef: ScrollBoxRenderable | undefined
-  const [listWidth, setListWidth] = createSignal(0)
-  const textWidth = () => (listWidth() > 0 ? listWidth() : props.width)
-  const focusFilter = () => inputRef?.focus()
-  const blurFilter = () => inputRef?.blur()
-
-  // Arrow-key navigation moves the highlight even when the list is capped to a
-  // few visible rows; keep the active row inside the viewport.
-  createEffect(() => {
-    const id = activeRow()
-    if (!id) return
-    scrollRef?.scrollChildIntoView(`session-history-${id}`)
-  })
-
-  // Full cross-project index from the server. The reactive store only holds
-  // what the CLI has cached, so page the server list to enumerate every
-  // project's sessions (newest first, top-level only).
-  const loadAll = async () => {
-    const collected: SessionInfo[] = []
-    let cursor: string | undefined
-    do {
-      const page = await context.client.session.list({
-        order: "desc",
-        limit: PAGE_SIZE,
-        parentID: null,
-        ...(cursor === undefined ? {} : { cursor }),
-      })
-      collected.push(...page.data)
-      cursor = page.cursor.next ?? undefined
-    } while (cursor !== undefined && collected.length < MAX_FETCH)
-    setRemote(collected)
-  }
-
-  // Refresh the index when the set of sessions changes (debounced).
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined
-  const scheduleRefresh = () => {
-    if (refreshTimer !== undefined) clearTimeout(refreshTimer)
-    refreshTimer = setTimeout(() => void loadAll().catch(() => {}), 250)
-  }
-  void loadAll().catch(() => {})
-
-  const stopCreated = context.data.on("session.created", scheduleRefresh)
-  const stopDeleted = context.data.on("session.deleted", scheduleRefresh)
-  const stopRenamed = context.data.on("session.renamed", scheduleRefresh)
-  const stopMetadata = context.data.on("session.metadata.updated", scheduleRefresh)
-  onCleanup(() => {
-    if (refreshTimer !== undefined) clearTimeout(refreshTimer)
-    stopCreated()
-    stopDeleted()
-    stopRenamed()
-    stopMetadata()
-  })
-
-  // Sessions before the query and row limit are applied — the freshness check
-  // needs every directory, not just the visible rows.
-  const allSessions = createMemo(() => {
-    const cached = context.data.session.list() ?? []
-    const projects = context.data.project.list() ?? []
-    const currentRoot = context.data.location.default()?.directory
-    // The reactive cache only holds sessions the CLI has loaded (often none in
-    // a fresh TUI), so the server index is what makes the list complete. In
-    // project scope, filter both sources by the current project.
-    const scope = (rows: readonly SessionInfo[]) =>
-      props.showAllProjects ? rows : scopeToCurrentProject(rows, currentRoot, projects)
-    return mergeSessions(scope(remote()), scope(cached))
-  })
-
-  // Reactive list of sessions, filtered by query and project scope.
-  const sessions = createMemo(() =>
-    filterSessions(allSessions(), query(), context.data.project.list() ?? []).slice(0, props.limit),
-  )
-
-  // Dim summary line: how many rows are shown and how many of them are missing.
-  const summary = createMemo(() => {
-    const total = sessions().length
-    const missing = sessions().filter((s) => stale().get(s.location.directory) === false).length
-    const count = `${total} ${total === 1 ? "session" : "sessions"}`
-    return missing > 0 ? `${count} · ${missing} missing` : count
-  })
-
-  // The distinct directories to check. Compared by value so a re-render that
-  // does not change the set never re-runs the freshness check.
-  const sessionDirectories = createMemo(
-    () => [...new Set(allSessions().map((s) => s.location.directory))].sort(),
-    [],
-    { equals: (a, b) => a.length === b.length && a.every((directory, index) => directory === b[index]) },
-  )
-
-  // Freshness pass: one batched RPC at this location reports which session
-  // directories are gone on the server. It runs server-side, so it also holds
-  // for a remote server and covers sessions from every project.
-  const [checkTick, setCheckTick] = createSignal(0)
-  let retryTimer: ReturnType<typeof setTimeout> | undefined
-  onCleanup(() => {
-    if (retryTimer !== undefined) clearTimeout(retryTimer)
-  })
-
-  createEffect(() => {
-    checkTick() // re-run dependency for retries
-    const directories = sessionDirectories().slice(0, MAX_DIRECTORIES)
-    if (directories.length === 0) {
-      setStale(new Map())
-      return
-    }
-    const rpc = context.client.rpc(SessionHistory)
-    const location = context.location ?? context.data.location.default()
-    void rpc
-      .check({ directories }, { location })
-      .then((result) => {
-        const missing = new Set((result as SessionHistoryCheckOutput).missing)
-        setStale(new Map(directories.map((directory) => [directory, !missing.has(directory)])))
-      })
-      .catch(() => {
-        // Fail open (no row dimmed) and retry shortly: a transient
-        // `rpc.unavailable` while the location activates must not stick.
-        if (retryTimer !== undefined) clearTimeout(retryTimer)
-        retryTimer = setTimeout(() => setCheckTick((n) => n + 1), 2000)
-      })
-  })
-
-  // Warn-once state for missing rows: activating the same row again opens it
-  // anyway. Cleared on a timer and whenever the filter changes.
-  let pendingTimer: ReturnType<typeof setTimeout> | undefined
-  const markPendingOpen = (sessionID: string) => {
-    setPendingOpen(sessionID)
-    if (pendingTimer !== undefined) clearTimeout(pendingTimer)
-    pendingTimer = setTimeout(() => setPendingOpen(undefined), 5000)
-  }
-  onCleanup(() => {
-    if (pendingTimer !== undefined) clearTimeout(pendingTimer)
-  })
-  createEffect(() => {
-    query()
-    setPendingOpen(undefined)
-  })
-
-  // Click handler: open in tab (preferred) or navigate when tabs are off.
-  //
-  // A session whose directory is gone warns first: the toast is a plain,
-  // dismissible notification (no `sessionID`, so the CLI does not attach its
-  // "Open" action), and activating the same row again opens it anyway.
-  const activate = (sessionID: string, directory: string) => {
-    blurFilter()
-    if (stale().get(directory) === false && pendingOpen() !== sessionID) {
-      markPendingOpen(sessionID)
-      context.ui.toast.show({
-        message: "Directory missing — click again to open anyway",
-        variant: "warning",
-        duration: 3000,
-      })
-      return
-    }
-    setPendingOpen(undefined)
-    if (context.ui.tabs.enabled()) {
-      const list = context.ui.tabs.list()
-      const existing = list.find((t) => t.sessionID === sessionID)
-      if (existing) {
-        context.ui.tabs.focus(sessionID)
-      } else {
-        context.ui.tabs.open(sessionID)
-        context.ui.tabs.focus(sessionID)
-      }
-      return
-    }
-    context.ui.router.navigate({ type: "session", sessionID })
-  }
-
-  // OpenTUI click idiom: mousedown highlights, mouseup fires the action.
-  const onMouseDown = (sessionID: string) => setActiveRow(sessionID)
-  const onMouseUp = (sessionID: string, directory: string) => activate(sessionID, directory)
-
-  // Keymap: while the search field is focused, Enter opens the highlighted row
-  // and the arrows move the highlight. Scoped to the field (`target`) so the
-  // prompt keeps Enter, the arrows and "/" — an unscoped layer here would
-  // intercept them and the prompt could not submit.
-  context.keymap.layer(() => ({
-    mode: "base",
-    target: () => inputRef,
-    priority: 1,
-    commands: [
-      {
-        id: "session-history.activate",
-        title: "Open highlighted session",
-        bind: "return",
-        enabled: () => {
-          const id = activeRow()
-          if (!id) return false
-          const session = sessions().find((s) => s.id === id)
-          return Boolean(session)
-        },
-        run: () => {
-          const id = activeRow()
-          if (!id) return
-          const session = sessions().find((s) => s.id === id)
-          if (!session) return
-          activate(session.id, session.location.directory)
-        },
-      },
-      {
-        id: "session-history.move-down",
-        title: "Move highlight down",
-        bind: "down",
-        run: () => {
-          const rows = sessions()
-          if (rows.length === 0) return
-          const i = rows.findIndex((s) => s.id === activeRow())
-          const next = i < 0 ? 0 : Math.min(i + 1, rows.length - 1)
-          const row = rows[next]
-          if (row) setActiveRow(row.id)
-        },
-      },
-      {
-        id: "session-history.move-up",
-        title: "Move highlight up",
-        bind: "up",
-        run: () => {
-          const rows = sessions()
-          if (rows.length === 0) return
-          const i = rows.findIndex((s) => s.id === activeRow())
-          const next = i < 0 ? rows.length - 1 : Math.max(i - 1, 0)
-          const row = rows[next]
-          if (row) setActiveRow(row.id)
-        },
-      },
-      {
-        id: "session-history.filter.dismiss",
-        title: "Clear session filter",
-        bind: "escape",
-        run: () => {
-          if (query()) {
-            setQuery("")
-            return
-          }
-          blurFilter()
-        },
-      },
-    ],
-  }))
-
-  return (
-    <box
-      flexDirection="column"
-      paddingX={1}
-      height={props.align === "center" ? "100%" : undefined}
-      justifyContent={props.align === "center" ? "center" : undefined}
-    >
-      <box flexDirection="column" border={["bottom"]} borderColor={context.theme.border?.base}>
-        <text fg={context.theme.text.strong}>Session History</text>
-        <box>
-          <input
-            ref={(el) => {
-              inputRef = el
-            }}
-            placeholder="Search"
-            backgroundColor={context.theme.background.formfield.base}
-            textColor={context.theme.text.formfield.base}
-            focusedBackgroundColor={context.theme.background.formfield.focused}
-            focusedTextColor={context.theme.text.formfield.focused}
-            cursorColor={context.theme.text.formfield.focused}
-            placeholderColor={context.theme.text.muted}
-            onMouseDown={focusFilter}
-            onInput={(v: string) => setQuery(v)}
-          />
-        </box>
-        <text fg={context.theme.text.feedback.warning.base}>{summary()}</text>
-      </box>
-      <Show
-        when={sessions().length > 0}
-        fallback={
-          <text fg={context.theme.text.muted}>
-            {query() ? "No matches" : "No previous sessions"}
-          </text>
-        }
-      >
-        <scrollbox
-          ref={(el) => {
-            scrollRef = el
-            setListWidth(el.viewport.width)
-          }}
-          onSizeChange={() => setListWidth(scrollRef?.viewport.width ?? 0)}
-          maxHeight={sessionListHeight(props.maxVisibleSessions, props.showMetrics)}
-        >
-          <For each={sessions()}>
-            {(s) => {
-              const isStale = createMemo(() => stale().get(s.location.directory) === false)
-              const isActive = createMemo(() => props.activeSessionID === s.id || activeRow() === s.id)
-              const label = s.title?.trim() || `session ${s.id.slice(0, 8)}`
-              // OpenTUI's native truncate puts the ellipsis in the middle, so
-              // cut titles by measured width and append "..." ourselves.
-              const title = () =>
-                props.truncateSessionTitles ? truncateToWidth(label, textWidth() - (isStale() ? 2 : 0)) : label
-              const metric = () =>
-                truncateToWidth(
-                  `${props.showAllProjects ? `${projectLabel(s.location.directory)} · ` : ""}` +
-                    `${formatRelative(s.time.updated)} · $${s.cost.toFixed(2)}`,
-                  textWidth(),
-                )
-              return (
-                <box
-                  id={`session-history-${s.id}`}
-                  flexDirection="column"
-                  border={["bottom"]}
-                  borderColor={context.theme.border?.base}
-                  onMouseDown={() => onMouseDown(s.id)}
-                  onMouseUp={() => onMouseUp(s.id, s.location.directory)}
-                >
-                  <text
-                    fg={
-                      isStale()
-                        ? context.theme.text.muted
-                        : isActive()
-                          ? context.theme.text.strong
-                          : context.theme.text.base
-                    }
-                    wrapMode={props.truncateSessionTitles ? "none" : "word"}
-                  >
-                    {isStale() ? (
-                      <span style={{ fg: context.theme.text.feedback.error.base }}>{"✗ "}</span>
-                    ) : null}
-                    {title()}
-                  </text>
-                  <Show when={props.showMetrics}>
-                    <text fg={context.theme.text.muted} wrapMode="none">
-                      {metric()}
-                    </text>
-                  </Show>
-                </box>
-              )
-            }}
-          </For>
-        </scrollbox>
-      </Show>
-    </box>
-  )
-}
-
-function formatRelative(epoch: number | undefined): string {
-  if (!epoch) return "—"
-  const diff = Date.now() - epoch
-  if (diff < 60_000) return "just now"
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return `${Math.floor(diff / 86_400_000)}d ago`
-}
