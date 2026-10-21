@@ -90,7 +90,7 @@ const config = {
 await writeFile(join(env.XDG_CONFIG_HOME!, "opencode", "cli.json"), JSON.stringify(config))
 for (const name of ["a", "b"]) {
   const cwd = join(root, name)
-  await run(["git", "init", "-q"], cwd)
+  await run(["git", "init", "-q", "--initial-branch=master"], cwd)
   await run(
     [
       "git",
