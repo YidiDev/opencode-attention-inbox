@@ -197,3 +197,44 @@ test("mouse controls accept only primary clicks; hidden or destroyed inbox canno
     await f.view.dispose()
   }
 })
+
+test("clicking a scrolled virtual row opens that row without moving content on press", async () => {
+  const f = await fixture(100)
+  try {
+    f.focus()
+    await f.run("move-down")
+    await f.run("dismiss")
+    for (let i = 0; i < 8; i++) await f.view.mockMouse.scroll(10, 8, "down")
+    await f.view.renderOnce()
+    const top = f.scroll().scrollTop
+    const target = f.mounted().find((row) => row.screenY >= f.scroll().viewport.screenY)!
+    const id = target.id.replace("attention-inbox-", "")
+    const x = target.screenX + 2
+    const y = target.screenY
+    await f.view.mockMouse.pressDown(x, y)
+    await f.view.renderOnce()
+    expect(f.scroll().scrollTop).toBe(top)
+    await f.view.mockMouse.release(x, y)
+    expect(f.opened).toEqual([id])
+  } finally {
+    await f.view.dispose()
+  }
+})
+
+for (const mutation of ["reorder", "remove"] as const) {
+  test(`a ${mutation} between pointer press and release never opens a replacement row`, async () => {
+    const f = await fixture(12)
+    try {
+      const target = f.row("s0")!
+      const x = target.screenX + 2
+      const y = target.screenY
+      await f.view.mockMouse.pressDown(x, y)
+      f.setItems(mutation === "remove" ? f.items().slice(1) : [...f.items()].reverse())
+      await f.view.renderOnce()
+      await f.view.mockMouse.release(x, y)
+      expect(f.opened).toEqual([])
+    } finally {
+      await f.view.dispose()
+    }
+  })
+}

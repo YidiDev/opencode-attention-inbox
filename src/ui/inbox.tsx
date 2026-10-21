@@ -39,7 +39,8 @@ export function Inbox(props: {
   let box: BoxRenderable | undefined
   let scroll: ScrollBoxRenderable | undefined
   let previous: Renderable | null = null
-  const focus = () => {
+  let pressedID: string | undefined
+  const focus = (reveal = true) => {
     // A tab/sidebar can be retained by the host while its layout is hidden.
     // Inspect only our own renderable, never the host's tree or breakpoint.
     if (
@@ -56,10 +57,11 @@ export function Inbox(props: {
     box?.focus()
     setFocused(true)
     if (!selected()) setSelected(props.rows[0]?.session.id)
-    revealSelection()
+    if (reveal) revealSelection()
     return true
   }
   const dismiss = () => {
+    pressedID = undefined
     box?.blur()
     setFocused(false)
     if (previous && !previous.isDestroyed) previous.focus()
@@ -201,13 +203,19 @@ export function Inbox(props: {
                   flexShrink={0}
                   onMouseDown={(event) => {
                     if (event.button === 0) {
-                      focus()
+                      pressedID = id
                       setSelected(id)
+                      // Pointer focus must not move virtualized content under the pointer.
+                      focus(false)
                     }
                   }}
                   onMouseUp={(event) => {
+                    if (event.button !== 0) return
+                    const pressed = pressedID
+                    pressedID = undefined
                     const current = row()
-                    if (event.button === 0 && current) activate(current)
+                    // A reorder/removal between press and release cancels the click.
+                    if (pressed === id && current) activate(current)
                   }}
                 >
                   <text fg={active() ? context.theme.text.strong : context.theme.text.base} wrapMode="none">

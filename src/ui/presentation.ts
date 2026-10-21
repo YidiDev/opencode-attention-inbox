@@ -1,7 +1,7 @@
 import { statusLabel } from "../attention/derive.js"
 import type { AttentionRow, Snapshot } from "../attention/model.js"
 import type { Scope } from "../options.js"
-import { directoryLabel, safeText, truncateTail } from "./text.js"
+import { directoryLabel, safeText, truncate, truncateTail } from "./text.js"
 
 /** Shared by the sidebar and hidden-sidebar picker: unknown is never empty. */
 export function inboxHealth(
@@ -24,14 +24,17 @@ export function inboxHealth(
 }
 
 export function rowContext(row: AttentionRow, width = 80): string {
-  const parent = row.session.parentID
-    ? ` · child of ${safeText(row.parentTitle ?? row.session.parentID)}`
-    : ""
-  // Keep the directory's distinguishing tail, not just a common path prefix.
-  return truncateTail(
-    `${row.session.projectID.slice(0, 8)} · ${directoryLabel(row.session.location.directory)}${parent}`,
-    width,
-  )
+  const limit = Math.max(0, Math.floor(width))
+  if (limit < 24) return truncateTail(directoryLabel(row.session.location.directory), limit)
+  const project = truncate(row.session.projectID.slice(0, 8), Math.floor(limit / 4))
+  const parent =
+    row.session.parentID && limit >= 24
+      ? ` · ${truncate(`child of ${safeText(row.parentTitle ?? row.session.parentID)}`, Math.min(26, Math.floor(limit / 3)))}`
+      : ""
+  const pathWidth = Math.max(0, limit - Bun.stringWidth(project + parent) - 3)
+  const path = truncateTail(directoryLabel(row.session.location.directory), pathWidth)
+  // Project and worktree get independent budgets; a long parent cannot erase either.
+  return truncate(`${project} · ${path}${parent}`, limit)
 }
 
 export function pickerOptions(rows: readonly AttentionRow[]) {

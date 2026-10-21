@@ -111,12 +111,14 @@ const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new
 const port = reservation.port!
 reservation.stop(true)
 const url = `http://127.0.0.1:${port}`
-const server = Bun.spawn(["opencode", "serve", "--hostname", "127.0.0.1", "--port", String(port)], {
-  env,
-  cwd: root,
-  stdout: Bun.file(join(root, "server.stdout")),
-  stderr: Bun.file(join(root, "server.stderr")),
-})
+const startServer = () =>
+  Bun.spawn(["opencode", "serve", "--hostname", "127.0.0.1", "--port", String(port)], {
+    env,
+    cwd: root,
+    stdout: Bun.file(join(root, "server.stdout")),
+    stderr: Bun.file(join(root, "server.stderr")),
+  })
+let server = startServer()
 let failed = false
 try {
   const client = OpenCode.make({
@@ -226,6 +228,13 @@ try {
   await tmux("new-session", "-d", "-s", "observer", "-x", "160", "-y", "48", command)
   const observer = () => tmux("capture-pane", "-p", "-t", "observer:0.0")
   await wait(async () => (await observer()).includes("All projects"), "scope persists into another CLI")
+  await tmux("send-keys", "-t", "observer", "C-x", "v")
+  await wait(
+    async () => (await capture()).includes("Current project"),
+    "scope propagates between running CLIs",
+  )
+  await tmux("send-keys", "-t", "inbox", "C-x", "v")
+  await wait(async () => (await observer()).includes("All projects"), "scope propagates back to the observer")
   assert(
     (await client.session.get({ sessionID: done.id })).time.viewed === undefined,
     "listing in two CLIs does not acknowledge completion",
@@ -387,6 +396,83 @@ try {
   )
   await save("10-child-tabs-off")
   await client.session.form.cancel({ sessionID: child.id, formID: childForm.id })
+  await tmux("send-keys", "-t", "inbox", "Escape")
+  await wait(async () => !(await capture()).includes("Subagents  Shell"), "return from child panel")
+  const scrollForms: { sessionID: string; formID: string; label: string }[] = []
+  for (let i = 0; i < 12; i++) {
+    const label = String(i).padStart(2, "0")
+    const owner = await client.session.create({ title: `Fixture scroll ${label}`, location: other.location })
+    const form = await client.session.form.create({
+      sessionID: owner.id,
+      title: `Scroll form ${label}`,
+      fields: [{ key: "answer", type: "string", title: `Scroll answer ${label}` }],
+    })
+    scrollForms.push({ sessionID: owner.id, formID: form.id, label })
+  }
+  await wait(async () => (await capture()).includes("Fixture scroll"), "scroll fixture appears")
+  const beforeScroll = await capture()
+  const heading = beforeScroll.split("\n").findIndex((line) => line.includes("Needs attention"))
+  const column = beforeScroll.split("\n")[heading]!.indexOf("Needs attention") + 4
+  const firstVisible = (text: string) => text.match(/Fixture scroll (\d+)/)?.[1]
+  const first = firstVisible(beforeScroll)
+  for (let i = 0; i < 8; i++) {
+    await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 7}M`)
+  }
+  await wait(async () => firstVisible(await capture()) !== first, "native wheel changes visible rows")
+  const clickedLabel = firstVisible(await capture())!
+  assert(clickedLabel !== undefined, "scrolled row remains visible")
+  await clickText(`Fixture scroll ${clickedLabel}`)
+  await wait(
+    async () => (await capture()).includes(`Scroll answer ${clickedLabel}`),
+    "scrolled click opens the exact owning form",
+  )
+  const selectedForm = scrollForms.find((item) => item.label === clickedLabel)!
+  assert(
+    (await client.session.form.list({ sessionID: selectedForm.sessionID })).length === 1,
+    "scrolled navigation never answers",
+  )
+  await save("11-scroll-click")
+  for (const item of scrollForms) await client.session.form.cancel(item)
+  const shortOwner = await client.session.create({
+    title: "Fixture short terminal",
+    location: other.location,
+  })
+  const shortForm = await makeForm(shortOwner.id)
+  await wait(
+    async () => (await capture()).includes("Fixture short terminal"),
+    "short-terminal request is indexed",
+  )
+  await tmux("resize-window", "-t", "inbox", "-x", "90", "-y", "18")
+  await wait(
+    async () => (await capture()).includes("Build ·") && !(await capture()).includes("Needs attention"),
+    "short terminal prompt remains usable",
+  )
+  await tmux("send-keys", "-t", "inbox", "C-x", "o")
+  await wait(async () => (await capture()).includes("Needs attention"), "short terminal picker")
+  await save("12-short-picker")
+  await tmux("send-keys", "-t", "inbox", "Escape")
+  await client.session.form.cancel({ sessionID: shortOwner.id, formID: shortForm.id })
+  // Restart only this harness's authenticated server; inventory must recover on reconnect.
+  server.kill()
+  await server.exited
+  server = startServer()
+  await wait(async () => !!(await client.server.info()), "private server restart")
+  const recovered = await client.session.create({
+    title: "Fixture after reconnect",
+    location: other.location,
+  })
+  const recoveredForm = await makeForm(recovered.id)
+  await tmux("resize-window", "-t", "inbox", "-x", "160", "-y", "48")
+  await wait(
+    async () => (await capture()).includes("Fixture after reconnect"),
+    "attention recovers after server reconnect",
+  )
+  await client.session.form.cancel({ sessionID: recovered.id, formID: recoveredForm.id })
+  await wait(
+    async () => !(await capture()).includes("Fixture after reconnect"),
+    "reconnected request resolves live",
+  )
+  await save("13-reconnect")
   console.log(`Live packed-plugin smoke passed. Evidence: ${root}`)
 } catch (error) {
   failed = true

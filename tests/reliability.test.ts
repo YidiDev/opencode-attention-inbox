@@ -155,3 +155,51 @@ test("manual refreshes coalesce and an aborted deadline never invokes a read", a
   await until(() => calls === 2)
   expect(inbox.current.sessions).toEqual([])
 })
+
+test("healthy pending progress is visible before unrelated locations and active reads settle", async () => {
+  const port = new FakePort()
+  const slow = deferred<{ permissions: { id: string; sessionID: string }[]; questions: never[] }>()
+  const active = deferred<Set<string>>()
+  port.inventory.push(session("b", { location: { directory: "/b" } }))
+  port.inventory.push(session("done", { outcome: "succeeded", time: { created: 1, updated: 2, idle: 10 } }))
+  port.pending = async (directory) =>
+    directory === "/b"
+      ? slow.promise
+      : {
+          permissions: [{ id: "p", sessionID: "a" }],
+          questions: [],
+        }
+  port.active = () => active.promise
+  const inbox = controller(port, { requestTimeoutMs: 1000, pollIntervalMs: 60_000 })
+  const scan = inbox.refresh()
+  await until(() => inbox.current.pending.length === 1)
+  expect(inbox.current.phase).toBe("partial")
+  expect(inbox.current.running.has("done")).toBe(true)
+  slow.resolve({ permissions: [], questions: [] })
+  active.resolve(new Set(["done"]))
+  await scan
+  expect(inbox.current.phase).toBe("ready")
+  expect(inbox.current.running.has("done")).toBe(true)
+})
+
+test("incremental reads preserve unchecked badges and verified completions, then clear only healthy owners", async () => {
+  const port = new FakePort()
+  port.inventory.push(session("b", { location: { directory: "/b" } }))
+  port.inventory.push(session("done", { outcome: "succeeded", time: { created: 1, updated: 2, idle: 10 } }))
+  port.pending = async (directory) => ({
+    permissions: [{ id: directory, sessionID: directory === "/a" ? "a" : "b" }],
+    questions: [],
+  })
+  const inbox = controller(port, { pollIntervalMs: 60_000 })
+  await inbox.refresh()
+  const slow = deferred<{ permissions: never[]; questions: never[] }>()
+  port.pending = async (directory) => (directory === "/b" ? slow.promise : { permissions: [], questions: [] })
+  const scan = inbox.refresh()
+  await until(() => inbox.current.phase === "partial" && inbox.current.pending.length === 1)
+  expect(inbox.current.pending[0]!.sessionID).toBe("b")
+  expect(inbox.current.running.has("done")).toBe(false)
+  slow.reject(new Error("offline"))
+  await scan
+  expect(inbox.current.phase).toBe("partial")
+  expect(inbox.current.pending.map((item) => item.sessionID)).toEqual(["b"])
+})

@@ -136,6 +136,10 @@ recovers missed events and disconnections.
 Polling waits for the previous scan to settle. Each API read has a 10-second
 deadline and cancellation; failed parallel reads cancel their sibling. Continuous
 events can publish useful progress as **Stale**, never falsely as current.
+Healthy directories publish pending-request progress immediately as **Partial**;
+unrelated slow directories do not block new attention items. Unchecked/failed
+directories retain their previous badges. New completion evidence waits for the
+active-session read, so incremental discovery never invents a completion.
 
 **Syncing**, **Partial**, **Stale**, and a `?` count qualifier explicitly indicate
 uncertainty; they are not a verified empty inbox. Failed reads preserve last-known
@@ -151,6 +155,9 @@ backing state or acknowledge anything.
 The maximum visible row count is clamped to 1–8 (default 4); scroll for more.
 Only the visible window plus two overscan rows is mounted. Refreshes preserve
 manual scroll position, and the narrow-terminal picker updates while open.
+Pointer focus does not scroll content under a click; a row removed or replaced
+under the pointer before release cancels navigation. Project/worktree labels reserve space independently
+of long parent titles.
 Polling is clamped to 5–300 seconds. The plugin stores only the scope preference,
 keeps attention metadata in memory, strips terminal control sequences from
 display strings, and does not log session titles, paths, or request contents.

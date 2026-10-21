@@ -24,7 +24,8 @@ export function Inbox(props) {
   let box;
   let scroll;
   let previous = null;
-  const focus = () => {
+  let pressedID;
+  const focus = (reveal = true) => {
     // A tab/sidebar can be retained by the host while its layout is hidden.
     // Inspect only our own renderable, never the host's tree or breakpoint.
     if (!box || box.isDestroyed || !box.visible || box.width <= 0 || box.height <= 0 || box.screenX >= context.renderer.width || box.screenY >= context.renderer.height) return false;
@@ -32,10 +33,11 @@ export function Inbox(props) {
     box?.focus();
     setFocused(true);
     if (!selected()) setSelected(props.rows[0]?.session.id);
-    revealSelection();
+    if (reveal) revealSelection();
     return true;
   };
   const dismiss = () => {
+    pressedID = undefined;
     box?.blur();
     setFocused(false);
     if (previous && !previous.isDestroyed) previous.focus();
@@ -199,13 +201,19 @@ export function Inbox(props) {
               _$setProp(_el$9, "flexShrink", 0);
               _$setProp(_el$9, "onMouseDown", event => {
                 if (event.button === 0) {
-                  focus();
+                  pressedID = id;
                   setSelected(id);
+                  // Pointer focus must not move virtualized content under the pointer.
+                  focus(false);
                 }
               });
               _$setProp(_el$9, "onMouseUp", event => {
+                if (event.button !== 0) return;
+                const pressed = pressedID;
+                pressedID = undefined;
                 const current = row();
-                if (event.button === 0 && current) activate(current);
+                // A reorder/removal between press and release cancels the click.
+                if (pressed === id && current) activate(current);
               });
               _$setProp(_el$0, "wrapMode", "none");
               _$insert(_el$0, () => truncate(`${active() ? "› " : ""}${row()?.session.title?.trim() || "Untitled session"}`, width()));

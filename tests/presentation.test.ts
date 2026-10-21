@@ -67,3 +67,31 @@ test("child context, untitled fallback and root project boundary handling", () =
   ).toBe("nested")
   expect(projectForDirectory("/elsewhere", [{ id: "root", canonical: "/", sandboxes: [] }])).toBe("root")
 })
+
+test("long identical parent titles cannot hide distinct project/worktree identity", () => {
+  const rows = deriveRows(
+    snapshot({
+      sessions: [
+        session("a", { parentID: "p1", location: { directory: "/one/worktree-A" } }),
+        session("b", {
+          projectID: "other-project",
+          parentID: "p2",
+          location: { directory: "/two/worktree-B" },
+        }),
+        session("p1", { title: "Long shared parent title with an identical ending" }),
+        session("p2", { title: "Long shared parent title with an identical ending" }),
+      ],
+      pending: ["a", "b"].map((id) => ({ id, sessionID: id, kind: "question" as const, since: 1 })),
+    }),
+  )
+  const labels = rows.map((row) => rowContext(row, 34))
+  expect(labels[0]).not.toBe(labels[1])
+  expect(labels[0]).toContain("project-")
+  expect(labels[1]).toContain("other-pr")
+  expect(labels[0]).toContain("tree-A")
+  expect(labels[1]).toContain("tree-B")
+  for (const row of rows) {
+    for (const width of [0, 3, 16, 24, 34, 80])
+      expect(Bun.stringWidth(rowContext(row, width))).toBeLessThanOrEqual(width)
+  }
+})

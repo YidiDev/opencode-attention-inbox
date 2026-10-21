@@ -108,6 +108,7 @@ export class InboxController {
   }
   private async reconcile() {
     const generation = this.generation
+    const baseline = this.snapshot
     const signal = this.abort.signal
     const read = <T>(operation: (signal: AbortSignal) => Promise<T>) =>
       readWithDeadline(signal, this.options.requestTimeoutMs ?? 10_000, operation)
@@ -129,6 +130,35 @@ export class InboxController {
       const directories = [...new Set([...sessions.values()].map((session) => session.location.directory))]
       const pending: Pending[] = []
       const retainedKeys = new Set<string>()
+      const completedDirectories = new Set<string>()
+      // Retain already-observed completion evidence, but never infer a new
+      // completion before the active-session read validates this inventory.
+      const progressRunning = new Set(sessions.keys())
+      for (const previous of baseline.sessions) {
+        if (
+          previous.outcome === "succeeded" &&
+          previous.time.idle === sessions.get(previous.id)?.time.idle &&
+          !baseline.running.has(previous.id)
+        )
+          progressRunning.delete(previous.id)
+      }
+      const publishProgress = () => {
+        const retained = baseline.pending.filter((item) => {
+          const owner = sessions.get(item.sessionID)
+          return (
+            owner &&
+            !completedDirectories.has(owner.location.directory) &&
+            !retainedKeys.has(`${item.kind}:${item.id}`)
+          )
+        })
+        this.emit({
+          sessions: [...sessions.values()],
+          pending: [...pending, ...retained],
+          running: progressRunning,
+          phase: generation === this.generation ? "partial" : "stale",
+          updatedAt: this.now(),
+        })
+      }
       let index = 0
       let failed = false
       const failedDirectories = new Set<string>()
@@ -152,10 +182,12 @@ export class InboxController {
                   pending.push({ ...item, kind, since })
                 }
               }
+              completedDirectories.add(directory)
             } catch {
               failed = true
               failedDirectories.add(directory)
             }
+            publishProgress()
           }
         }),
       )
@@ -165,7 +197,7 @@ export class InboxController {
       if (changed) this.dirty = true
       if (failed) {
         // Unknown pending state must not silently resolve a previously known badge.
-        for (const item of this.snapshot.pending) {
+        for (const item of baseline.pending) {
           const session = sessions.get(item.sessionID)
           if (
             !retainedKeys.has(`${item.kind}:${item.id}`) &&
