@@ -409,7 +409,10 @@ try {
     })
     scrollForms.push({ sessionID: owner.id, formID: form.id, label })
   }
-  await wait(async () => (await capture()).includes("Fixture scroll"), "scroll fixture appears")
+  await wait(async () => {
+    const text = await capture()
+    return /Needs attention\s+12\s*$/m.test(text) && text.includes("Fixture scroll")
+  }, "all scroll fixtures finish reconciliation")
   const beforeScroll = await capture()
   const heading = beforeScroll.split("\n").findIndex((line) => line.includes("Needs attention"))
   const column = beforeScroll.split("\n")[heading]!.indexOf("Needs attention") + 4
@@ -418,8 +421,18 @@ try {
   for (let i = 0; i < 8; i++) {
     await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 7}M`)
   }
-  await wait(async () => firstVisible(await capture()) !== first, "native wheel changes visible rows")
-  const clickedLabel = firstVisible(await capture())!
+  let clickedLabel: string | undefined
+  let stableFrames = 0
+  await wait(async () => {
+    const candidate = firstVisible(await capture())
+    if (candidate === undefined || candidate === first) {
+      stableFrames = 0
+      return false
+    }
+    stableFrames = candidate === clickedLabel ? stableFrames + 1 : 1
+    clickedLabel = candidate
+    return stableFrames >= 4
+  }, "native wheel settles on a different visible row")
   assert(clickedLabel !== undefined, "scrolled row remains visible")
   await clickText(`Fixture scroll ${clickedLabel}`)
   await wait(
