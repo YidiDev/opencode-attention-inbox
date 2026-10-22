@@ -134,8 +134,9 @@ The setup-owned controller subscribes before reading, pages through **all**
 sessions (including children), and fetches pending requests once per distinct
 session directory, with at most four directories in flight. It does not rely on
 the TUI's incomplete session cache or stop at 500 sessions. Relevant events
-invalidate the snapshot with a 200 ms debounce; a periodic full reconciliation
-recovers missed events and disconnections.
+invalidate the snapshot with a 200 ms debounce; repeated events preserve every
+invalidation and request timestamp without republishing unchanged uncertainty.
+A periodic full reconciliation recovers missed events and disconnections.
 
 Polling waits for the previous scan to settle. Each API read has a 10-second
 deadline and cancellation; failed parallel reads cancel their sibling. Continuous

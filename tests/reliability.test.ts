@@ -239,6 +239,55 @@ test("large directory inventories bound full snapshot derivations and preserve t
   expect(count).toBe(3000)
 })
 
+test("event bursts bound full snapshot derivations and preserve timestamps and reconciliation", async () => {
+  const port = new FakePort()
+  port.inventory = Array.from({ length: 3000 }, (_, index) => session(String(index)))
+  port.requests.questions = port.inventory.map((owner) => ({ id: owner.id, sessionID: owner.id }))
+  const inbox = controller(port, { pollIntervalMs: 60_000, requestTimeoutMs: 1000 })
+  let publications = 0
+  let rows = 0
+  inbox.subscribe((state) => {
+    publications++
+    rows = deriveRows(state).length
+  })
+  inbox.start()
+  await until(() => inbox.current.phase === "ready")
+  const calls = port.listCalls
+  publications = 0
+  for (let index = 0; index < 1000; index++) {
+    port.handler!({ request: { kind: "question", id: "0", created: 1000 - index } })
+    expect(inbox.current.phase).toBe("stale")
+  }
+  expect(publications).toBe(1)
+  expect(rows).toBe(3000)
+  expect(port.listCalls).toBe(calls)
+  await until(() => inbox.current.phase === "ready")
+  expect(publications).toBeLessThanOrEqual(5)
+  expect(port.listCalls).toBe(calls + 1)
+  expect(rows).toBe(3000)
+  expect(inbox.current.pending.find((item) => item.id === "0")?.since).toBe(1)
+})
+
+test("events during initial syncing still invalidate in-flight reads without duplicate publications", async () => {
+  const port = new FakePort()
+  const blocked = deferred<Awaited<ReturnType<InboxPort["sessions"]>>>()
+  let calls = 0
+  port.sessions = async () => (++calls === 1 ? blocked.promise : { data: [session("latest")] })
+  const inbox = controller(port, { pollIntervalMs: 60_000, requestTimeoutMs: 1000 })
+  inbox.start()
+  await until(() => calls === 1)
+  let publications = 0
+  inbox.subscribe(() => publications++)
+  publications = 0
+  for (let index = 0; index < 1000; index++) port.handler!({})
+  expect(publications).toBe(0)
+  expect(inbox.current.phase).toBe("syncing")
+  blocked.resolve({ data: [session("outdated")] })
+  await until(() => inbox.current.phase === "ready")
+  expect(calls).toBe(2)
+  expect(inbox.current.sessions[0]?.id).toBe("latest")
+})
+
 test("progress batches publish during a blocked scan and preserve event uncertainty", async () => {
   const port = new FakePort()
   port.inventory.push(session("b", { location: { directory: "/b" } }))

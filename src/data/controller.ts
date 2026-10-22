@@ -75,7 +75,10 @@ export class InboxController {
     if (this.disposed) return
     this.generation++
     this.dirty = true
-    this.emit({ ...this.snapshot, phase: this.snapshot.updatedAt === undefined ? "syncing" : "stale" })
+    const phase = this.snapshot.updatedAt === undefined ? "syncing" : "stale"
+    // Every event still invalidates the scan and records request timestamps,
+    // but repeated uncertainty must not re-derive the entire inbox per event.
+    if (this.snapshot.phase !== phase) this.emit({ ...this.snapshot, phase })
     // Leading-edge debounce: continuous events must not postpone a read forever.
     if (!this.timer && !this.inFlight) {
       this.timer = setTimeout(() => {

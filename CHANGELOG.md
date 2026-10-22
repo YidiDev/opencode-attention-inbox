@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Coalesce repeated event uncertainty notifications without losing invalidations or request timestamps.
 - Batch directory progress to bound full-inbox derivations while preserving early discovery.
 - Bound optional settings RPC reads and cancel in-flight work/retries on reload.
 - Document npm as a prerequisite for development/package verification.
