@@ -13,7 +13,8 @@ bun run check
 bun run test:live
 ```
 
-Live tests require Git, npm, tar, tmux and OpenCode. They use an extracted package,
+`check` requires npm for archive verification, in addition to Bun. Live tests also
+require Git, tar, tmux and OpenCode. They use an extracted package,
 isolated HOME/XDG directories and their own authenticated server, without model
 calls or inherited provider credentials. Never point them at a real user's data.
 For one file use `bun test --preload @opentui/solid/preload tests/attention.test.ts`.

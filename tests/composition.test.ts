@@ -118,3 +118,61 @@ test("server entry only exposes sanitized, bounded settings under the renamed RP
     },
   })
 })
+
+test("setup passes settings cancellation through the public RPC while CLI options remain usable", async () => {
+  const hung = deferred<{ options: Record<string, unknown> }>()
+  let signal: AbortSignal | undefined
+  let picker: DialogSelectOptions<string> | undefined
+  const commands = new Map<string, KeymapCommand>()
+  const context = {
+    options: { defaultScope: "all" },
+    client: {
+      rpc: () => ({
+        settings: (_input: unknown, options: { signal: AbortSignal }) => {
+          signal = options.signal
+          return hung.promise
+        },
+      }),
+      session: { list: async () => ({ data: [session("a")], cursor: {} }), active: async () => ({}) },
+      permission: { request: { list: async () => ({ data: [] }) } },
+      form: { list: async () => ({ data: [{ id: "q", sessionID: "a" }] }) },
+    },
+    storage: { store: () => [{}, async () => {}] },
+    data: {
+      location: { default: () => ({ directory: "/unknown-project" }) },
+      project: { sync: async () => {}, list: () => [] },
+      session: { get: () => undefined },
+      listen: () => () => {},
+    },
+    keymap: {
+      layer: (get: () => { commands: KeymapCommand[] }) => {
+        for (const command of get().commands) commands.set(command.id!, command)
+      },
+    },
+    ui: {
+      router: { current: () => ({ type: "home" }) },
+      slot: () => () => {},
+      dialog: {
+        select: async (options: DialogSelectOptions<string>) => {
+          picker = options
+          return undefined
+        },
+      },
+    },
+  } as unknown as Context
+  const dispose = createRoot((dispose) => {
+    tuiPlugin.setup(context)
+    return dispose
+  })
+  try {
+    await until(() => signal !== undefined)
+    await Bun.sleep(5)
+    await commands.get("attention-inbox.focus")!.run!()
+    expect(picker!.options[0]!.value).toBe("a")
+    expect(signal!.aborted).toBe(false)
+  } finally {
+    dispose()
+  }
+  expect(signal!.aborted).toBe(true)
+  hung.resolve({ options: { defaultScope: "project" } })
+})

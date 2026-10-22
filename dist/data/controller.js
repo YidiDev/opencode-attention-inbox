@@ -100,6 +100,7 @@ export class InboxController {
     const generation = this.generation;
     const baseline = this.snapshot;
     const signal = this.abort.signal;
+    let progressTimer;
     const read = operation => readWithDeadline(signal, this.options.requestTimeoutMs ?? 10_000, operation);
     this.emit({
       ...this.snapshot,
@@ -117,9 +118,10 @@ export class InboxController {
         if (cursor && cursors.has(cursor)) throw new Error("repeated cursor");
         if (cursor) cursors.add(cursor);
         // Never show a full count or false empty while the index is partial.
-        this.emit({
+        const phase = generation === this.generation ? "partial" : "stale";
+        if (this.snapshot.phase !== phase) this.emit({
           ...this.snapshot,
-          phase: "partial"
+          phase
         });
       } while (cursor !== undefined);
       const directories = [...new Set([...sessions.values()].map(session => session.location.directory))];
@@ -144,6 +146,22 @@ export class InboxController {
           phase: generation === this.generation ? "partial" : "stale",
           updatedAt: this.now()
         });
+      };
+      let published = false;
+      let progressDirty = false;
+      const flushProgress = () => {
+        if (progressTimer) clearTimeout(progressTimer);
+        progressTimer = undefined;
+        if (!progressDirty || this.disposed) return;
+        progressDirty = false;
+        published = true;
+        publishProgress();
+      };
+      const queueProgress = () => {
+        progressDirty = true;
+        // Leading progress is immediate; subsequent results share one snapshot
+        // per short window instead of re-deriving the entire inbox per directory.
+        if (!published) flushProgress();else if (!progressTimer) progressTimer = setTimeout(flushProgress, 50);
       };
       let index = 0;
       let failed = false;
@@ -175,9 +193,11 @@ export class InboxController {
             failed = true;
             failedDirectories.add(directory);
           }
-          publishProgress();
+          queueProgress();
         }
       }));
+      // Do not wait for active-session validation to reveal pending requests.
+      flushProgress();
       const running = await read(signal => this.port.active(signal));
       if (this.disposed) return;
       const changed = generation !== this.generation;
@@ -205,6 +225,8 @@ export class InboxController {
         ...this.snapshot,
         phase: "stale"
       });
+    } finally {
+      if (progressTimer) clearTimeout(progressTimer);
     }
   }
   dispose() {

@@ -34,6 +34,10 @@ Built against **OpenCode 2.1.4**, Bun **1.4.0**, Linux x64. The V2 plugin API is
 experimental; other host versions are not yet verified. This repository is private;
 the npm package is unpublished.
 
+The development/check workflow below requires **npm** as well as Bun: packaging
+tests invoke `npm pack`. If your Bun installation does not include npm, install
+Node.js/npm separately. Live acceptance additionally requires Git, tar and tmux.
+
 ```sh
 cd /path/to/opencode-attention-inbox
 bun install --frozen-lockfile
@@ -136,8 +140,12 @@ recovers missed events and disconnections.
 Polling waits for the previous scan to settle. Each API read has a 10-second
 deadline and cancellation; failed parallel reads cancel their sibling. Continuous
 events can publish useful progress as **Stale**, never falsely as current.
-Healthy directories publish pending-request progress immediately as **Partial**;
-unrelated slow directories do not block new attention items. Unchecked/failed
+The first directory result publishes immediately as **Partial**; later
+results are coalesced into 50 ms progress batches to avoid re-deriving the entire
+inbox for every directory. Final pending progress flushes before the active read,
+and the validated final snapshot publishes immediately. Completed healthy reads
+do not wait for unrelated slow reads before publishing; directories still share
+the bounded queue, so large historical inventories can delay discovery. Unchecked/failed
 directories retain their previous badges. New completion evidence waits for the
 active-session read, so incremental discovery never invents a completion.
 
@@ -161,6 +169,10 @@ of long parent titles.
 Polling is clamped to 5–300 seconds. The plugin stores only the scope preference,
 keeps attention metadata in memory, strips terminal control sequences from
 display strings, and does not log session titles, paths, or request contents.
+
+The optional server-settings RPC also has a 10-second deadline, bounded retries,
+and setup-owned cancellation on reload. CLI-configured options remain available
+while this compatibility bridge is unavailable.
 
 ## Development
 

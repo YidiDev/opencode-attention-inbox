@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Batch directory progress to bound full-inbox derivations while preserving early discovery.
+- Bound optional settings RPC reads and cancel in-flight work/retries on reload.
+- Document npm as a prerequisite for development/package verification.
 - Fix scrolled-row clicks opening the wrong session; cancel clicks across row changes.
 - Publish healthy-directory pending progress before unrelated slow reads settle.
 - Preserve distinguishing project/worktree labels alongside long parent titles.

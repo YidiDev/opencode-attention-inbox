@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
+import { deriveRows } from "../src/attention/derive.js"
 import { InboxController } from "../src/data/controller.js"
 import { readWithDeadline } from "../src/data/deadline.js"
 import type { InboxPort } from "../src/data/port.js"
@@ -202,4 +203,88 @@ test("incremental reads preserve unchecked badges and verified completions, then
   await scan
   expect(inbox.current.phase).toBe("partial")
   expect(inbox.current.pending.map((item) => item.sessionID)).toEqual(["b"])
+})
+
+test("large directory inventories bound full snapshot derivations and preserve the final result", async () => {
+  const port = new FakePort()
+  port.inventory = Array.from({ length: 3000 }, (_, index) =>
+    session(String(index), { location: { directory: `/${index}` } }),
+  )
+  port.sessions = async (cursor) => {
+    const offset = Number(cursor ?? 0)
+    return {
+      data: structuredClone(port.inventory.slice(offset, offset + 100)),
+      next: offset + 100 < port.inventory.length ? String(offset + 100) : undefined,
+    }
+  }
+  port.pending = async (directory) => ({
+    permissions: [],
+    questions: [{ id: directory, sessionID: directory.slice(1) }],
+  })
+  const inbox = controller(port, { pollIntervalMs: 60_000, requestTimeoutMs: 1000 })
+  let publications = 0
+  let count = 0
+  inbox.subscribe((state) => {
+    publications++
+    count = deriveRows(state).length
+  })
+  await inbox.refresh()
+  expect(publications).toBeLessThanOrEqual(6)
+  expect(count).toBe(3000)
+  expect(inbox.current.phase).toBe("ready")
+  // Warm scans must not re-derive last-known rows once per inventory page either.
+  publications = 0
+  await inbox.refresh()
+  expect(publications).toBeLessThanOrEqual(5)
+  expect(count).toBe(3000)
+})
+
+test("progress batches publish during a blocked scan and preserve event uncertainty", async () => {
+  const port = new FakePort()
+  port.inventory.push(session("b", { location: { directory: "/b" } }))
+  port.inventory.push(session("c", { location: { directory: "/c" } }))
+  const later = deferred<{ permissions: never[]; questions: { id: string; sessionID: string }[] }>()
+  const blocked = deferred<{ permissions: never[]; questions: never[] }>()
+  port.pending = async (directory) =>
+    directory === "/a"
+      ? { permissions: [], questions: [{ id: "a", sessionID: "a" }] }
+      : directory === "/b"
+        ? later.promise
+        : blocked.promise
+  const inbox = controller(port, { pollIntervalMs: 60_000, requestTimeoutMs: 1000 })
+  inbox.start()
+  await until(() => inbox.current.pending.length === 1)
+  port.handler!({})
+  later.resolve({ permissions: [], questions: [{ id: "b", sessionID: "b" }] })
+  await until(() => inbox.current.pending.length === 2)
+  expect(inbox.current.phase).toBe("stale")
+  inbox.dispose()
+  const before = inbox.current
+  blocked.resolve({ permissions: [], questions: [] })
+  await Bun.sleep(60)
+  expect(inbox.current).toBe(before)
+})
+
+test("disposing a queued progress batch cancels late publication", async () => {
+  const port = new FakePort()
+  port.inventory.push(session("b", { location: { directory: "/b" } }))
+  port.inventory.push(session("c", { location: { directory: "/c" } }))
+  const later = deferred<{ permissions: never[]; questions: { id: string; sessionID: string }[] }>()
+  port.pending = async (directory) =>
+    directory === "/a"
+      ? { permissions: [], questions: [{ id: "a", sessionID: "a" }] }
+      : directory === "/b"
+        ? later.promise
+        : new Promise(() => {})
+  const inbox = controller(port, { requestTimeoutMs: 1000 })
+  const scan = inbox.refresh()
+  await until(() => inbox.current.pending.length === 1)
+  later.resolve({ permissions: [], questions: [{ id: "b", sessionID: "b" }] })
+  await Bun.sleep(1)
+  inbox.dispose()
+  const before = inbox.current
+  await scan
+  await Bun.sleep(60)
+  expect(inbox.current).toBe(before)
+  expect(inbox.current.pending).toHaveLength(1)
 })

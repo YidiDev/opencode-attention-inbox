@@ -5,6 +5,7 @@ import { deriveRows, scopeRows } from "./attention/derive.js"
 import { projectForDirectory } from "./attention/scope.js"
 import { createAdapter } from "./data/adapter.js"
 import { InboxController } from "./data/controller.js"
+import { syncSettings } from "./data/settings.js"
 import { resolveOptions, type Scope } from "./options.js"
 import { AttentionInbox } from "./rpc.js"
 import { Inbox } from "./ui/inbox.js"
@@ -32,24 +33,17 @@ export default Plugin.define({
     }
 
     let disposed = false
-    let retry: ReturnType<typeof setTimeout> | undefined
-    let attempts = 0
-    const loadSettings = async () => {
-      try {
-        const result = (await context.client.rpc(AttentionInbox).settings(
+    const stopSettings = syncSettings(
+      (signal) =>
+        context.client.rpc(AttentionInbox).settings(
           {},
           {
             location: context.location ?? context.data.location.default(),
+            signal,
           },
-        )) as { options: Record<string, unknown> }
-        if (!disposed) setServerOptions(result.options)
-      } catch (error) {
-        if (!disposed && ++attempts < 15 && (error as { type?: string })?.type !== "rpc.method_not_found") {
-          retry = setTimeout(() => void loadSettings(), 1000)
-        }
-      }
-    }
-    void loadSettings()
+        ) as Promise<{ options: Record<string, unknown> }>,
+      setServerOptions,
+    )
     void context.data.project.sync().catch(() => {})
     const controller = new InboxController(createAdapter(context), {
       pollIntervalMs: options().pollIntervalMs,
@@ -154,7 +148,7 @@ export default Plugin.define({
     controller.start()
     onCleanup(() => {
       disposed = true
-      if (retry) clearTimeout(retry)
+      stopSettings()
       stopSlot()
       stopSnapshot()
       controller.dispose()
