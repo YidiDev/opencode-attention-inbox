@@ -11,8 +11,8 @@ import { statusLabel } from "../attention/derive.js"
 import type { AttentionRow, Snapshot } from "../attention/model.js"
 import type { Scope } from "../options.js"
 import { openSession } from "./navigation.js"
-import { inboxHealth, rowContext, rowWindow } from "./presentation.js"
-import { truncate } from "./text.js"
+import { inboxHealth, rowIndicator, rowTitle, rowWindow } from "./presentation.js"
+import { safeText, truncate } from "./text.js"
 
 export function Inbox(props: {
   rows: readonly AttentionRow[]
@@ -27,8 +27,17 @@ export function Inbox(props: {
   const [selected, setSelected] = createSignal<string>()
   const [width, setWidth] = createSignal(34)
   const [focused, setFocused] = createSignal(false)
+  const [hovered, setHovered] = createSignal<string>()
   const [scrollTop, setScrollTop] = createSignal(0)
   const byID = createMemo(() => new Map(props.rows.map((row) => [row.session.id, row])))
+  const disambiguation = createMemo(() => {
+    const titles = new Map<string, number>()
+    for (const row of props.rows) {
+      const title = safeText(row.session.title?.trim() || "Untitled session")
+      titles.set(title, (titles.get(title) ?? 0) + 1)
+    }
+    return titles
+  })
   const window = createMemo(() =>
     rowWindow(
       props.rows.map((row) => row.session.id),
@@ -80,10 +89,10 @@ export function Inbox(props: {
   function revealSelection() {
     const index = props.rows.findIndex((row) => row.session.id === selected())
     if (!scroll || index < 0) return
-    const top = index * 3
-    const height = scroll.viewport.height || props.maxVisibleRows * 3
+    const top = index
+    const height = scroll.viewport.height || props.maxVisibleRows
     if (top < scroll.scrollTop) scroll.scrollTo(top)
-    else if (top + 3 > scroll.scrollTop + height) scroll.scrollTo(top + 3 - height)
+    else if (top + 1 > scroll.scrollTop + height) scroll.scrollTo(top + 1 - height)
     syncScroll()
   }
   const activate = (row: AttentionRow) => {
@@ -120,6 +129,12 @@ export function Inbox(props: {
     ],
   }))
   const health = () => inboxHealth(props.snapshot.phase, props.rows.length, props.scope, props.projectKnown)
+  const footer = () => {
+    if (focused()) return "↑↓ select · Enter open · Esc back"
+    const id = hovered()
+    const row = id ? byID().get(id) : undefined
+    return row ? statusLabel(row) : ""
+  }
   const measure = () => {
     const viewport = scroll && !scroll.isDestroyed ? scroll.viewport.width : 0
     setWidth(Math.max(1, viewport || (box?.width ?? 36) - 2))
@@ -141,7 +156,7 @@ export function Inbox(props: {
       onSizeChange={measure}
     >
       <text
-        fg={context.theme.text.strong}
+        fg={context.theme.text.base}
         onMouseUp={(event) => {
           if (event.button === 0) focus()
         }}
@@ -179,28 +194,45 @@ export function Inbox(props: {
             syncScroll()
           }}
           onMouseScroll={() => queueMicrotask(syncScroll)}
-          maxHeight={props.maxVisibleRows * 3}
+          maxHeight={props.maxVisibleRows}
           flexShrink={1}
         >
           <box height={window().before} flexShrink={0} />
           <For each={window().ids}>
             {(id) => {
               const row = () => byID().get(id)
-              const status = () => {
+              const indicator = () => {
                 const current = row()
-                return current ? statusLabel(current) : ""
+                return current ? rowIndicator(current) : ""
               }
               const label = () => {
                 const current = row()
-                return current ? rowContext(current, width()) : ""
+                if (!current) return ""
+                const title = safeText(current.session.title?.trim() || "Untitled session")
+                return rowTitle(
+                  current,
+                  Math.max(0, width() - Bun.stringWidth(indicator()) - 5),
+                  (disambiguation().get(title) ?? 0) > 1,
+                )
               }
               const active = () => selected() === id && focused()
+              const states = () => ({ hovered: hovered() === id, selected: active(), focused: active() })
+              onCleanup(() => {
+                if (hovered() === id) setHovered(undefined)
+              })
               return (
+                // biome-ignore lint/a11y/useKeyWithMouseEvents: Native list keyboard focus is on the parent; hover must never focus a row.
                 <box
                   id={`attention-inbox-${id}`}
-                  flexDirection="column"
-                  height={3}
+                  flexDirection="row"
+                  height={1}
                   flexShrink={0}
+                  width="100%"
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={context.theme.background.action.secondary.state(states())}
+                  onMouseOver={() => setHovered(id)}
+                  onMouseOut={() => setHovered(undefined)}
                   onMouseDown={(event) => {
                     if (event.button === 0) {
                       pressedID = id
@@ -218,17 +250,18 @@ export function Inbox(props: {
                     if (pressed === id && current) activate(current)
                   }}
                 >
-                  <text fg={active() ? context.theme.text.strong : context.theme.text.base} wrapMode="none">
-                    {truncate(
-                      `${active() ? "› " : ""}${row()?.session.title?.trim() || "Untitled session"}`,
-                      width(),
-                    )}
-                  </text>
-                  <text fg={context.theme.text.feedback.warning.base} wrapMode="none">
-                    {truncate(status(), width())}
-                  </text>
-                  <text fg={context.theme.text.muted} wrapMode="none">
-                    {label()}
+                  <text fg={context.theme.text.action.secondary.state(states())} wrapMode="none">
+                    {active() ? "› " : "  "}
+                    <span
+                      style={{
+                        fg: row()?.permissions
+                          ? context.theme.text.feedback.warning.base
+                          : context.theme.text.feedback.info.base,
+                      }}
+                    >
+                      {indicator()}
+                    </span>
+                    {` ${label()}`}
                   </text>
                 </box>
               )
@@ -237,11 +270,9 @@ export function Inbox(props: {
           <box height={window().after} flexShrink={0} />
         </scrollbox>
       </Show>
-      <Show when={focused()}>
-        <text fg={context.theme.text.muted} wrapMode="none">
-          {truncate("↑↓ select · Enter open · Esc back", width())}
-        </text>
-      </Show>
+      <text height={1} fg={context.theme.text.muted} wrapMode="none">
+        {truncate(footer(), width())}
+      </text>
     </box>
   )
 }

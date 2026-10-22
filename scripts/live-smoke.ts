@@ -50,12 +50,16 @@ const wait = async (condition: () => Promise<boolean>, label: string) => {
   throw new Error(`Timed out: ${label}`)
 }
 const capture = () => tmux("capture-pane", "-p", "-t", "inbox:0.0")
-const clickText = async (needle: string) => {
+const pointerTarget = async (needle: string) => {
   const lines = (await capture()).split("\n")
   let row = -1
   for (let index = 0; index < lines.length; index++) if (lines[index]!.includes(needle)) row = index
   assert(row >= 0, `mouse target: ${needle}`)
   const column = Bun.stringWidth(lines[row]!.slice(0, lines[row]!.indexOf(needle))) + 1
+  return { column, row }
+}
+const clickText = async (needle: string) => {
+  const { column, row } = await pointerTarget(needle)
   await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<0;${column};${row + 1}M\x1b[<0;${column};${row + 1}m`)
 }
 const save = async (name: string) => {
@@ -209,16 +213,29 @@ try {
     async () => (await capture()).includes("Fixture worktree question"),
     "worktree included in project",
   )
-  await wait(async () => (await capture()).includes("Done · unread"), "native completion badge")
+  await wait(async () => (await capture()).includes("● Fixture completed"), "native completion indicator")
   let screen = await save("01-project")
   assert(!screen.includes("Fixture foreign question"), "foreign project must be filtered")
   await clickText("Current project")
   await wait(async () => (await capture()).includes("All projects"), "scope mouse control")
   await wait(async () => (await capture()).includes("Fixture foreign question"), "all-project inventory")
   await wait(
-    async () => (await capture()).includes("Permission · Question"),
-    "multiple native request badges",
+    async () => (await capture()).includes("!? Fixture foreign question"),
+    "multiple compact request indicators",
   )
+  const target = await pointerTarget("Fixture foreign question")
+  const plainBefore = (await capture()).split("\n")[target.row]
+  const colorBefore = (await tmux("capture-pane", "-p", "-e", "-t", "inbox:0.0")).split("\n")[target.row]
+  await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<35;${target.column};${target.row + 1}M`)
+  await wait(
+    async () => (await capture()).includes("Permission · Question"),
+    "hover exposes status without focus",
+  )
+  const hoveredScreen = await save("02-hover")
+  assert(!hoveredScreen.includes("Esc back"), "hover never focuses the inbox")
+  assert(hoveredScreen.split("\n")[target.row] === plainBefore, "hover never shifts or renames the row")
+  const colorAfter = (await tmux("capture-pane", "-p", "-e", "-t", "inbox:0.0")).split("\n")[target.row]
+  assert(colorAfter !== colorBefore, "native theme visibly highlights the hovered row")
   await tmux("send-keys", "-t", "inbox", "C-x", "v")
   await wait(async () => (await capture()).includes("Current project"), "scope keyboard shortcut")
   await tmux("send-keys", "-t", "inbox", "C-x", "v")
@@ -419,7 +436,7 @@ try {
   const firstVisible = (text: string) => text.match(/Fixture scroll (\d+)/)?.[1]
   const first = firstVisible(beforeScroll)
   for (let i = 0; i < 8; i++) {
-    await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 7}M`)
+    await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 4}M`)
   }
   let clickedLabel: string | undefined
   let stableFrames = 0

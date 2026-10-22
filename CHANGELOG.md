@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Replace three-line attention entries with compact, single-line tab-like rows,
+  semantic theme hover/selection backgrounds, compact status indicators, and
+  inline duplicate-title context. Hover never changes focus, selection or viewed state.
+- Update virtual scrolling and pointer regression coverage for one-line rows,
+  and verify visible hover highlighting in the packed native TUI.
+
 - Coalesce repeated event uncertainty notifications without losing invalidations or request timestamps.
 - Batch directory progress to bound full-inbox derivations while preserving early discovery.
 - Bound optional settings RPC reads and cancel in-flight work/retries on reload.

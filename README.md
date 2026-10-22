@@ -4,7 +4,7 @@ A separate, navigation-only OpenCode V2 plugin. **Needs attention** lives at the
 bottom of the right sidebar and updates without switching away from your work.
 
 - Pending **permissions** and **questions**, including blocking child sessions.
-- Successful **Done · unread** completions, using OpenCode's native idle/viewed markers.
+- Successful unread completions, using OpenCode's native idle/viewed markers.
 - Click a row to focus/open that session, preserving its own project and worktree.
 - Switch between **Current project** (including its worktrees) and **All projects**
   on the connected server. The choice is saved across CLI instances.
@@ -12,20 +12,14 @@ bottom of the right sidebar and updates without switching away from your work.
 No inline approval, automatic answers, notifications, transcript fetching, or
 communicator integration. This is not session history or multi-server aggregation.
 
-Example from the isolated packed-plugin acceptance run (fixture paths shortened):
+Compact tab-like rows (synthetic acceptance fixtures):
 
 ```text
 Needs attention 3
 All projects ↔
-Fixture foreign question
-Permission · Question
-…/b
-Fixture worktree question
-Question
-…/tree
-Fixture completed
-Done · unread
-…/a
+  !? Fixture foreign question
+   ? Fixture worktree question
+   ● Fixture completed
 ```
 
 ## Local installation
@@ -102,6 +96,15 @@ The host hides the sidebar on narrow terminals and on home. **Focus needs
 attention** then uses a native picker; open-next and scope commands still work.
 The plugin does not force the sidebar open or alter your layout settings.
 
+Each session occupies **one terminal line**, with native theme hover and keyboard
+selection backgrounds. `!` means permission, `?` means question, and `●` means
+successful unread completion; combined indicators retain every attention reason.
+Hover highlights the entire row and shows a status summary in the reserved footer,
+without selecting, stealing focus, scrolling, or acknowledging anything. Keyboard
+selection also has a `›` marker. The footer keeps a fixed height so pointer focus
+does not move rows under your cursor. Duplicate titles get a short inline context
+suffix; full project/worktree/parent context and counts remain in the native picker.
+
 ## Attention semantics
 
 One row per owning session, with multiple badges when applicable. Permissions
@@ -117,8 +120,8 @@ IDs break ties, so refreshes do not shuffle equal-priority rows.
 - Opening a row never answers a question or approves a permission. Those badges
   remain until native resolution/cancellation. Archived sessions still appear
   for unresolved blocking requests, but not ordinary completions.
-- Ordinary child completions are hidden by default; child requests show the
-  parent context and pass the actual child's ID to the native router, without
+- Ordinary child completions are hidden by default; child requests retain their
+  parent context in the picker and pass the actual child's ID to the native router, without
   duplicating its badge on the parent. OpenCode 2.1.4 displays child navigation
   in its native **Subagents** panel rather than a separate root-session tab.
   Inactive children can require the panel's **show inactive** control; this

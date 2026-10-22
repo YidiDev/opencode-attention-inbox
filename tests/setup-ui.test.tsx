@@ -5,7 +5,7 @@ import type { Context, DialogSelectOptions, KeymapCommand } from "@opencode/plug
 import { type JSX, testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import tuiPlugin from "../src/tui.js"
-import { session, until } from "./support.js"
+import { session, theme, until } from "./support.js"
 
 test("mounted setup focuses the active footer, opens next, uses route project, and cleans settings retries", async () => {
   const commands = new Map<string, KeymapCommand>()
@@ -18,10 +18,7 @@ test("mounted setup focuses the active footer, opens next, uses route project, a
   const context = {
     location: { directory: "/a" },
     options: { defaultScope: "all" },
-    theme: {
-      text: { strong: "white", base: "white", muted: "gray", feedback: { warning: { base: "yellow" } } },
-      border: { base: "gray" },
-    },
+    theme,
     client: {
       rpc: () => ({
         settings: async () => {

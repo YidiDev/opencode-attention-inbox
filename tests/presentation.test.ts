@@ -1,7 +1,14 @@
 import { expect, test } from "bun:test"
 import { deriveRows } from "../src/attention/derive.js"
 import { projectForDirectory } from "../src/attention/scope.js"
-import { inboxHealth, pickerOptions, rowContext, rowWindow } from "../src/ui/presentation.js"
+import {
+  inboxHealth,
+  pickerOptions,
+  rowContext,
+  rowIndicator,
+  rowTitle,
+  rowWindow,
+} from "../src/ui/presentation.js"
 import { truncateTail } from "../src/ui/text.js"
 import { session, snapshot } from "./support.js"
 
@@ -41,9 +48,39 @@ test("virtual list bounds mounted rows independently of 100,000 session inventor
   for (const offset of [0, 3, 150_000, 299_999, 999_999]) {
     const window = rowWindow(ids, offset, 4)
     expect(window.ids.length).toBeLessThanOrEqual(6)
-    expect(window.before + window.ids.length * 3 + window.after).toBe(300_000)
+    expect(window.before + window.ids.length + window.after).toBe(100_000)
   }
   expect(rowWindow([], 0, 4)).toEqual({ ids: [], before: 0, after: 0 })
+})
+
+test("single-line labels preserve attention indicators, safe titles and bounded Unicode context", () => {
+  const row = deriveRows(
+    snapshot({
+      sessions: [session("a", { title: "\x1b[31m路径👩‍💻" })],
+      pending: [{ id: "q", sessionID: "a", kind: "question", since: 1 }],
+    }),
+  )[0]!
+  expect(rowIndicator(row)).toBe("?")
+  row.permissions = 2
+  row.completedIdle = 1
+  expect(rowIndicator(row)).toBe("!?●")
+  row.questions = 0
+  expect(rowIndicator(row)).toBe("!●")
+  row.permissions = 0
+  expect(rowIndicator(row)).toBe("●")
+  row.completedIdle = undefined
+  expect(rowIndicator(row)).toBe("")
+  for (const width of [0, 1, 8, 20, 34, 80]) {
+    for (const context of [true, false]) {
+      const title = rowTitle(row, width, context)
+      expect(Bun.stringWidth(title)).toBeLessThanOrEqual(width)
+      expect(title).not.toContain("\x1b")
+    }
+  }
+  row.session.title = ""
+  row.session.location.directory = "/"
+  expect(rowTitle(row, 80, true)).toContain("Untitled session")
+  expect(rowTitle(row, 80, true)).toEndWith("projec/")
 })
 
 test("child context, untitled fallback and root project boundary handling", () => {

@@ -1,6 +1,24 @@
 import type { Session, Snapshot } from "../src/attention/model.js"
 import type { InboxPort, Invalidation } from "../src/data/port.js"
 
+export const theme = {
+  text: {
+    base: "white",
+    muted: "gray",
+    action: { secondary: { state: () => "white" } },
+    feedback: { warning: { base: "yellow" }, info: { base: "cyan" } },
+  },
+  background: {
+    action: {
+      secondary: {
+        state: ({ selected, hovered }: { selected?: boolean; hovered?: boolean }) =>
+          selected ? "#334455" : hovered ? "#223344" : "transparent",
+      },
+    },
+  },
+  border: { base: "gray" },
+}
+
 export function session(id: string, extra: Partial<Session> = {}): Session {
   return {
     id,

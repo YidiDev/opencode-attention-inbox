@@ -2,12 +2,12 @@
 import { expect, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand } from "@opencode/plugin/tui/context"
-import type { Renderable, ScrollBoxRenderable } from "@opentui/core"
+import { type BoxRenderable, type Renderable, RGBA, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal, onCleanup } from "solid-js"
 import { deriveRows } from "../src/attention/derive.js"
 import { Inbox } from "../src/ui/inbox.js"
-import { session, snapshot } from "./support.js"
+import { session, snapshot, theme } from "./support.js"
 
 async function fixture(count = 12) {
   const rows = deriveRows(
@@ -28,10 +28,7 @@ async function fixture(count = 12) {
   let toggles = 0
   const opened: string[] = []
   const context = {
-    theme: {
-      text: { strong: "white", base: "white", muted: "gray", feedback: { warning: { base: "yellow" } } },
-      border: { base: "gray" },
-    },
+    theme,
     keymap: {
       layer: (get: () => { mode?: string; target?: () => unknown; commands: KeymapCommand[] }) => {
         const layer = get()
@@ -111,7 +108,7 @@ test("real OpenTUI component retains row identity, scroll and input focus across
     expect(f.row("s0")).toBe(first)
     expect(f.focus()).toBe(true)
     for (let i = 0; i < 10; i++) await f.run("move-down")
-    expect(f.view.captureCharFrame()).toContain("› Row 10")
+    expect(f.view.captureCharFrame()).toContain("› ? Row 10")
     expect(f.mounted().length).toBeLessThanOrEqual(6)
     await f.run("dismiss")
     const top = f.scroll().scrollTop
@@ -156,7 +153,7 @@ test("mouse wheel virtualizes new rows without focus or refresh scroll jumps", a
   const f = await fixture(100)
   try {
     const first = f.scroll().scrollTop
-    for (let i = 0; i < 8; i++) await f.view.mockMouse.scroll(10, 8, "down")
+    for (let i = 0; i < 8; i++) await f.view.mockMouse.scroll(10, f.scroll().viewport.screenY + 1, "down")
     await f.view.renderOnce()
     expect(f.scroll().scrollTop).toBeGreaterThan(first)
     expect(f.mounted().length).toBeLessThanOrEqual(6)
@@ -166,6 +163,65 @@ test("mouse wheel virtualizes new rows without focus or refresh scroll jumps", a
     f.setItems([...f.items()])
     await f.view.renderOnce()
     expect(f.scroll().scrollTop).toBe(top)
+  } finally {
+    await f.view.dispose()
+  }
+})
+
+test("single-line tab rows highlight on hover without changing selection, focus, scroll or navigation", async () => {
+  const f = await fixture()
+  try {
+    const first = f.row("s0") as BoxRenderable
+    const second = f.row("s1") as BoxRenderable
+    expect(first.height).toBe(1)
+    expect(second.screenY - first.screenY).toBe(1)
+    const originalFocus = f.view.renderer.currentFocusedRenderable
+    const top = f.scroll().scrollTop
+    await f.view.mockMouse.moveTo(first.screenX + first.width - 2, first.screenY)
+    await f.view.renderOnce()
+    expect(first.backgroundColor.equals(RGBA.fromHex("#223344"))).toBe(true)
+    expect(f.view.captureCharFrame()).toContain("Question")
+    expect(f.view.renderer.currentFocusedRenderable).toBe(originalFocus)
+    expect(f.scroll().scrollTop).toBe(top)
+    expect(f.opened).toEqual([])
+    f.focus()
+    await f.view.mockMouse.moveTo(second.screenX + 3, second.screenY)
+    await f.view.renderOnce()
+    expect(first.backgroundColor.equals(RGBA.fromHex("#334455"))).toBe(true)
+    expect(second.backgroundColor.equals(RGBA.fromHex("#223344"))).toBe(true)
+    await f.run("activate")
+    expect(f.opened).toEqual(["s0"])
+    await f.view.mockMouse.moveTo(0, 0)
+    await f.view.renderOnce()
+    expect(second.backgroundColor.a).toBe(0)
+  } finally {
+    await f.view.dispose()
+  }
+})
+
+test("compact badges retain every reason and duplicate titles get inline context", async () => {
+  const f = await fixture(2)
+  try {
+    f.setItems(
+      f.items().map((row, index) => ({
+        ...row,
+        permissions: 2,
+        completedIdle: 3,
+        session: { ...row.session, title: "Same title", location: { directory: `/work/tree-${index}` } },
+      })),
+    )
+    await f.view.renderOnce()
+    const frame = f.view.captureCharFrame()
+    expect(frame).toContain("!?● Same title")
+    expect(frame).toContain("tree-0")
+    expect(frame).toContain("tree-1")
+    const first = f.row("s0")!
+    await f.view.mockMouse.moveTo(first.screenX + 3, first.screenY)
+    await f.view.renderOnce()
+    expect(f.view.captureCharFrame()).toContain("Permission ×2 · Question")
+    f.setItems([])
+    await f.view.renderOnce()
+    expect(f.view.captureCharFrame()).toContain("Nothing needs attention")
   } finally {
     await f.view.dispose()
   }
@@ -204,7 +260,7 @@ test("clicking a scrolled virtual row opens that row without moving content on p
     f.focus()
     await f.run("move-down")
     await f.run("dismiss")
-    for (let i = 0; i < 8; i++) await f.view.mockMouse.scroll(10, 8, "down")
+    for (let i = 0; i < 8; i++) await f.view.mockMouse.scroll(10, f.scroll().viewport.screenY + 1, "down")
     await f.view.renderOnce()
     const top = f.scroll().scrollTop
     const target = f.mounted().find((row) => row.screenY >= f.scroll().viewport.screenY)!

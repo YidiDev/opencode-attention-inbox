@@ -33,13 +33,25 @@ export function pickerOptions(rows) {
   }));
 }
 
+/** Compact tab-like indicators; complete request counts remain in the picker. */
+export function rowIndicator(row) {
+  return `${row.permissions ? "!" : ""}${row.questions ? "?" : ""}${row.completedIdle !== undefined ? "●" : ""}`;
+}
+export function rowTitle(row, width, showContext = false) {
+  const title = safeText(row.session.title?.trim() || "Untitled session");
+  if (!showContext || width < 20) return truncate(title, width);
+  const directory = directoryLabel(row.session.location.directory).split("/").at(-1) || "/";
+  const hint = truncateTail(`${row.session.projectID.slice(0, 6)}/${directory === "/" ? "" : directory}`, Math.min(14, Math.floor(width / 3)));
+  return `${truncate(title, width - Bun.stringWidth(hint) - 3)} · ${hint}`;
+}
+
 /** Fixed-height virtual list, with one row of overscan on either side. */
 export function rowWindow(ids, scrollTop, visibleRows) {
-  const start = Math.max(0, Math.min(Math.floor(scrollTop / 3) - 1, Math.max(0, ids.length - visibleRows)));
+  const start = Math.max(0, Math.min(Math.floor(scrollTop) - 1, Math.max(0, ids.length - visibleRows)));
   const end = Math.min(ids.length, start + visibleRows + 2);
   return {
     ids: ids.slice(start, end),
-    before: start * 3,
-    after: (ids.length - end) * 3
+    before: start,
+    after: ids.length - end
   };
 }
