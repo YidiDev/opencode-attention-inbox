@@ -4,12 +4,12 @@ import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand } from "@opencode/plugin/tui/context"
 import { type BoxRenderable, type Renderable, RGBA, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { deriveRows } from "../src/attention/derive.js"
 import { Inbox } from "../src/ui/inbox.js"
 import { session, snapshot, theme } from "./support.js"
 
-async function fixture(count = 12) {
+async function fixture(count = 12, withInput = false) {
   const rows = deriveRows(
     snapshot({
       sessions: Array.from({ length: count }, (_, index) => session(`s${index}`, { title: `Row ${index}` })),
@@ -23,6 +23,8 @@ async function fixture(count = 12) {
   )
   const [state, setState] = createSignal(snapshot())
   const [items, setItems] = createSignal(rows)
+  const [scope, setScope] = createSignal<"all" | "project">("all")
+  const [projectKnown, setProjectKnown] = createSignal(true)
   const commands = new Map<string, KeymapCommand>()
   let focus: (() => boolean) | undefined
   let toggles = 0
@@ -31,12 +33,15 @@ async function fixture(count = 12) {
     theme,
     keymap: {
       layer: (get: () => { mode?: string; target?: () => unknown; commands: KeymapCommand[] }) => {
-        const layer = get()
-        // Explicit focus must retain Escape/arrow handling even when a host
-        // autocomplete mode was active; the renderable target still scopes it.
-        expect(layer.mode).toBe("global")
-        expect(layer.target).toBeFunction()
-        for (const command of layer.commands) commands.set(command.id!, command)
+        createEffect(() => {
+          const layer = get()
+          // Explicit focus must retain Escape/arrow handling even when a host
+          // autocomplete mode was active; the renderable target still scopes it.
+          expect(layer.mode).toBe("global")
+          expect(layer.target).toBeFunction()
+          commands.clear()
+          for (const command of layer.commands) commands.set(command.id!, command)
+        })
         onCleanup(() => commands.clear())
       },
     },
@@ -51,8 +56,8 @@ async function fixture(count = 12) {
         <Inbox
           rows={items()}
           snapshot={state()}
-          scope="all"
-          projectKnown={true}
+          scope={scope()}
+          projectKnown={projectKnown()}
           maxVisibleRows={4}
           toggleScope={() => {
             toggles++
@@ -64,6 +69,7 @@ async function fixture(count = 12) {
             }
           }}
         />
+        {withInput && <box id="test-input" height={1} focusable={true} />}
       </PluginContextProvider>
     ),
     { width: 38, height: 24 },
@@ -71,7 +77,7 @@ async function fixture(count = 12) {
   Object.defineProperty(context, "renderer", { value: view.renderer })
   await view.renderOnce()
   const run = async (id: string) => {
-    await commands.get(`attention-inbox.${id}`)!.run!()
+    await commands.get(`attention-inbox.${id}`)?.run?.()
     await view.renderOnce()
   }
   const row = (id: string) => view.renderer.root.findDescendantById(`attention-inbox-${id}`)
@@ -90,6 +96,8 @@ async function fixture(count = 12) {
     items,
     setItems,
     setState,
+    setScope,
+    setProjectKnown,
     commands,
     opened,
     mounted: () => descendants(view.renderer.root).filter((node) => node.id.startsWith("attention-inbox-s")),
@@ -110,6 +118,8 @@ test("real OpenTUI component retains row identity, scroll and input focus across
     for (let i = 0; i < 10; i++) await f.run("move-down")
     expect(f.view.captureCharFrame()).toContain("› ? Row 10")
     expect(f.mounted().length).toBeLessThanOrEqual(6)
+    for (let i = 0; i < 10; i++) await f.run("move-up")
+    expect(f.view.captureCharFrame()).toContain("› ? Row 0")
     await f.run("dismiss")
     const top = f.scroll().scrollTop
     f.setState(snapshot({ phase: "ready" }))
@@ -143,7 +153,10 @@ test("keyboard selection stays by ID, navigation never answers, deletion and sco
     await f.view.renderOnce()
     await f.run("activate")
     expect(f.opened).toHaveLength(2)
-    expect(f.view.captureCharFrame()).toContain("Nothing needs attention")
+    expect(f.view.captureCharFrame().trim()).toBe("")
+    expect(f.view.renderer.root.getChildren()).toHaveLength(0)
+    expect(f.focus()).toBe(false)
+    expect(f.commands.size).toBe(0)
   } finally {
     await f.view.dispose()
   }
@@ -180,7 +193,7 @@ test("single-line tab rows highlight on hover without changing selection, focus,
     await f.view.mockMouse.moveTo(first.screenX + first.width - 2, first.screenY)
     await f.view.renderOnce()
     expect(first.backgroundColor.equals(RGBA.fromHex("#223344"))).toBe(true)
-    expect(f.view.captureCharFrame()).toContain("Question")
+    expect(f.view.captureCharFrame()).not.toContain("Question")
     expect(f.view.renderer.currentFocusedRenderable).toBe(originalFocus)
     expect(f.scroll().scrollTop).toBe(top)
     expect(f.opened).toEqual([])
@@ -218,10 +231,10 @@ test("compact badges retain every reason and duplicate titles get inline context
     const first = f.row("s0")!
     await f.view.mockMouse.moveTo(first.screenX + 3, first.screenY)
     await f.view.renderOnce()
-    expect(f.view.captureCharFrame()).toContain("Permission ×2 · Question")
+    expect(f.view.captureCharFrame()).not.toContain("Permission ×2 · Question")
     f.setItems([])
     await f.view.renderOnce()
-    expect(f.view.captureCharFrame()).toContain("Nothing needs attention")
+    expect(f.view.captureCharFrame().trim()).toBe("")
   } finally {
     await f.view.dispose()
   }
@@ -230,13 +243,12 @@ test("compact badges retain every reason and duplicate titles get inline context
 test("mouse controls accept only primary clicks; hidden or destroyed inbox cannot steal focus", async () => {
   const f = await fixture(2)
   try {
-    await f.view.mockMouse.click(4, 3, 2)
-    expect(f.toggles()).toBe(0)
-    await f.view.mockMouse.click(4, 3, 0)
-    expect(f.toggles()).toBe(1)
-    await f.view.mockMouse.click(4, 2, 0)
+    expect(f.view.captureCharFrame()).not.toContain("Needs attention")
+    expect(f.view.captureCharFrame()).not.toContain("All projects")
+    expect(f.view.renderer.root.getChildren()[0]!.height).toBe(2)
+    expect(f.focus()).toBe(true)
     await f.view.renderOnce()
-    expect(f.view.captureCharFrame()).toContain("Esc back")
+    expect(f.view.captureCharFrame()).toContain("› ? Row 0")
     await f.run("move-up")
     const row = f.row("s0")!
     await f.view.mockMouse.click(row.screenX + 2, row.screenY, 2)
@@ -249,6 +261,81 @@ test("mouse controls accept only primary clicks; hidden or destroyed inbox canno
     box.visible = true
     f.focus()
     await f.view.renderOnce()
+  } finally {
+    await f.view.dispose()
+  }
+})
+
+test("healthy empty inbox occupies no space, reappears, and only reports uncertain results", async () => {
+  const f = await fixture(0)
+  try {
+    expect(f.view.renderer.root.getChildren()).toHaveLength(0)
+    expect(f.focus()).toBe(false)
+    f.setState(snapshot({ phase: "syncing" }))
+    await f.view.renderOnce()
+    expect(f.view.renderer.root.getChildren()).toHaveLength(0)
+    for (const phase of ["partial", "stale"] as const) {
+      f.setState(snapshot({ phase }))
+      await f.view.renderOnce()
+      expect(f.view.renderer.root.getChildren()[0]!.height).toBe(1)
+      expect(f.view.captureCharFrame()).toContain(phase === "partial" ? "Partial" : "Stale")
+      expect(f.focus()).toBe(false)
+    }
+    f.setState(snapshot())
+    f.setScope("project")
+    f.setProjectKnown(false)
+    await f.view.renderOnce()
+    expect(f.view.captureCharFrame()).toContain("Resolving current project")
+    expect(f.focus()).toBe(false)
+    f.setProjectKnown(true)
+    await f.view.renderOnce()
+    expect(f.view.renderer.root.getChildren()).toHaveLength(0)
+    f.setItems(
+      deriveRows(
+        snapshot({
+          sessions: [session("s0")],
+          pending: [{ id: "q", sessionID: "s0", kind: "question", since: 1 }],
+        }),
+      ),
+    )
+    await f.view.renderOnce()
+    expect(f.view.renderer.root.getChildren()[0]!.height).toBe(1)
+    expect(f.focus()).toBe(true)
+    f.setItems([])
+    await f.view.renderOnce()
+    expect(f.view.renderer.root.getChildren()).toHaveLength(0)
+    expect(f.view.renderer.currentFocusedRenderable?.id).not.toBe("attention-inbox-s0")
+    expect(f.focus()).toBe(false)
+  } finally {
+    await f.view.dispose()
+  }
+})
+
+test("collapsing a focused inbox restores the prior input and remounting keeps controls usable", async () => {
+  const f = await fixture(1, true)
+  const input = f.view.renderer.root.findDescendantById("test-input")!
+  try {
+    input.focus()
+    expect(f.focus()).toBe(true)
+    f.setItems([])
+    await f.view.renderOnce()
+    expect(f.view.renderer.currentFocusedRenderable?.id).toBe(input.id)
+    expect(f.focus()).toBe(false)
+    await f.run("move-down")
+    f.setItems(
+      deriveRows(
+        snapshot({
+          sessions: [session("s0", { title: "" })],
+          pending: [{ id: "q", sessionID: "s0", kind: "question", since: 1 }],
+        }),
+      ),
+    )
+    await f.view.renderOnce()
+    expect(f.focus()).toBe(true)
+    await f.view.renderOnce()
+    expect(f.view.captureCharFrame()).toContain("Untitled session")
+    await f.run("dismiss")
+    expect(f.view.renderer.currentFocusedRenderable?.id).toBe(input.id)
   } finally {
     await f.view.dispose()
   }

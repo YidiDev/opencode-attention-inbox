@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Remove sidebar heading, scope label, divider, padding, and reserved footer; show
+  only session rows and compact uncertainty warnings, with zero space for a healthy
+  empty inbox and safe focus release when its final row disappears.
+
 - Replace three-line attention entries with compact, single-line tab-like rows,
   semantic theme hover/selection backgrounds, compact status indicators, and
   inline duplicate-title context. Hover never changes focus, selection or viewed state.

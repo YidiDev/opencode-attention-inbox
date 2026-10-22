@@ -208,7 +208,6 @@ try {
     .map(shellQuote)
     .join(" ")
   await tmux("new-session", "-d", "-s", "inbox", "-x", "160", "-y", "48", command)
-  await wait(async () => (await capture()).includes("Needs attention"), "packed plugin footer")
   await wait(
     async () => (await capture()).includes("Fixture worktree question"),
     "worktree included in project",
@@ -216,8 +215,8 @@ try {
   await wait(async () => (await capture()).includes("● Fixture completed"), "native completion indicator")
   let screen = await save("01-project")
   assert(!screen.includes("Fixture foreign question"), "foreign project must be filtered")
-  await clickText("Current project")
-  await wait(async () => (await capture()).includes("All projects"), "scope mouse control")
+  assert(!screen.includes("Needs attention"), "sidebar has no permanent header")
+  await tmux("send-keys", "-t", "inbox", "C-x", "v")
   await wait(async () => (await capture()).includes("Fixture foreign question"), "all-project inventory")
   await wait(
     async () => (await capture()).includes("!? Fixture foreign question"),
@@ -228,30 +227,37 @@ try {
   const colorBefore = (await tmux("capture-pane", "-p", "-e", "-t", "inbox:0.0")).split("\n")[target.row]
   await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<35;${target.column};${target.row + 1}M`)
   await wait(
-    async () => (await capture()).includes("Permission · Question"),
-    "hover exposes status without focus",
+    async () =>
+      (await tmux("capture-pane", "-p", "-e", "-t", "inbox:0.0")).split("\n")[target.row] !== colorBefore,
+    "hover highlights without extra status lines",
   )
   const hoveredScreen = await save("02-hover")
-  assert(!hoveredScreen.includes("Esc back"), "hover never focuses the inbox")
+  assert(!hoveredScreen.includes("› !?"), "hover never focuses the inbox")
   assert(hoveredScreen.split("\n")[target.row] === plainBefore, "hover never shifts or renames the row")
   const colorAfter = (await tmux("capture-pane", "-p", "-e", "-t", "inbox:0.0")).split("\n")[target.row]
   assert(colorAfter !== colorBefore, "native theme visibly highlights the hovered row")
   await tmux("send-keys", "-t", "inbox", "C-x", "v")
-  await wait(async () => (await capture()).includes("Current project"), "scope keyboard shortcut")
+  await wait(async () => !(await capture()).includes("Fixture foreign question"), "scope keyboard shortcut")
   await tmux("send-keys", "-t", "inbox", "C-x", "v")
-  await wait(async () => (await capture()).includes("All projects"), "scope keyboard toggle back")
+  await wait(async () => (await capture()).includes("Fixture foreign question"), "scope keyboard toggle back")
   await save("02-all")
   // An independently started CLI must read the saved scope, without duplicating state.
   await tmux("new-session", "-d", "-s", "observer", "-x", "160", "-y", "48", command)
   const observer = () => tmux("capture-pane", "-p", "-t", "observer:0.0")
-  await wait(async () => (await observer()).includes("All projects"), "scope persists into another CLI")
+  await wait(
+    async () => (await observer()).includes("Fixture foreign question"),
+    "scope persists into another CLI",
+  )
   await tmux("send-keys", "-t", "observer", "C-x", "v")
   await wait(
-    async () => (await capture()).includes("Current project"),
+    async () => !(await capture()).includes("Fixture foreign question"),
     "scope propagates between running CLIs",
   )
   await tmux("send-keys", "-t", "inbox", "C-x", "v")
-  await wait(async () => (await observer()).includes("All projects"), "scope propagates back to the observer")
+  await wait(
+    async () => (await observer()).includes("Fixture foreign question"),
+    "scope propagates back to the observer",
+  )
   assert(
     (await client.session.get({ sessionID: done.id })).time.viewed === undefined,
     "listing in two CLIs does not acknowledge completion",
@@ -272,16 +278,16 @@ try {
   await wait(async () => !(await capture()).includes("Fixture completed"), "another client viewed completion")
   // Focus and escape must not submit or approve anything; ordinary prompt typing resumes.
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
-  await wait(async () => (await capture()).includes("Esc back"), "inbox focus")
+  await wait(async () => (await capture()).includes("› ?"), "inbox focus")
   await tmux("send-keys", "-t", "inbox", "Escape")
-  await wait(async () => !(await capture()).includes("Esc back"), "inbox blur")
+  await wait(async () => !(await capture()).includes("› ?"), "inbox blur")
   await tmux("send-keys", "-t", "inbox", "-l", "fixture-unsent")
   await wait(async () => (await capture()).includes("fixture-unsent"), "prompt focus restored")
   await tmux("send-keys", "-t", "inbox", "C-u")
   await save("04-focus")
   // Select the owning worktree session, not a session in the launch directory.
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
-  await wait(async () => (await capture()).includes("Esc back"), "inbox refocus")
+  await wait(async () => (await capture()).includes("› ?"), "inbox refocus")
   await tmux("send-keys", "-t", "inbox", "Enter")
   await wait(async () => (await capture()).includes("Fixture answer"), "navigate to native form")
   screen = await save("05-navigation")
@@ -289,7 +295,7 @@ try {
     (await client.session.form.list({ sessionID: tree.id })).length === 1,
     "opening must not answer a question",
   )
-  await wait(async () => (await capture()).includes("Needs attention"), "footer survives navigation")
+  await wait(async () => (await capture()).includes("? Fixture worktree question"), "rows survive navigation")
   const secondForeignForm = await makeForm(other.id)
   await wait(
     async () => (await capture()).includes("Fixture foreign question"),
@@ -308,7 +314,7 @@ try {
   await client.session.form.cancel({ sessionID: other.id, formID: secondForeignForm.id })
   await wait(async () => !(await capture()).includes("Fixture answer"), "native form resolved externally")
   await tmux("resize-window", "-t", "inbox", "-x", "90", "-y", "28")
-  await wait(async () => !(await capture()).includes("Needs attention"), "narrow sidebar hidden")
+  await wait(async () => !(await capture()).includes("? Fixture worktree question"), "narrow sidebar hidden")
   await wait(async () => (await capture()).includes("Build ·"), "narrow prompt ready")
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
   await wait(async () => (await capture()).includes("Needs attention"), "narrow native picker")
@@ -331,7 +337,8 @@ try {
   await tmux("send-keys", "-t", "inbox", "Escape")
   await tmux("resize-window", "-t", "inbox", "-x", "160", "-y", "48")
   await wait(
-    async () => (await capture()).includes("Needs attention") && (await capture()).includes("Build ·"),
+    async () =>
+      (await capture()).includes("? Fixture worktree question") && (await capture()).includes("Build ·"),
     "wide layout returns",
   )
   const clicked = await client.session.create({
@@ -352,7 +359,7 @@ try {
     "opening completion acknowledges exact native idle",
   )
   await wait(
-    async () => !(await capture()).split("Needs attention")[1]?.includes("Fixture clicked completion"),
+    async () => !(await capture()).includes("● Fixture clicked completion"),
     "viewed completion leaves footer",
   )
   await save("08-click-completion")
@@ -363,15 +370,19 @@ try {
   await tmux("send-keys", "-t", "inbox", "Enter")
   await wait(async () => !(await capture()).includes("/reload"), "reload command consumed")
   await wait(
-    async () => (await capture()).includes("All projects") && (await capture()).includes("Build ·"),
+    async () =>
+      (await capture()).includes("? Fixture worktree question") && (await capture()).includes("Build ·"),
     "reload restores saved scope",
   )
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
-  await wait(async () => (await capture()).includes("Esc back"), "focus still works after reload")
-  assert((await capture()).split("Needs attention").length === 2, "reload must not duplicate footer")
+  await wait(async () => (await capture()).includes("› ?"), "focus still works after reload")
+  assert(
+    (await capture()).split("? Fixture worktree question").length === 2,
+    "reload must not duplicate rows",
+  )
   await save("09-reload")
   await tmux("send-keys", "-t", "inbox", "Escape")
-  await wait(async () => !(await capture()).includes("Esc back"), "release focus before disabling tabs")
+  await wait(async () => !(await capture()).includes("› ?"), "release focus before disabling tabs")
   await writeFile(
     join(env.XDG_CONFIG_HOME!, "opencode", "cli.json"),
     JSON.stringify({ ...config, tabs: { mode: "off", scope: "global" } }),
@@ -428,15 +439,15 @@ try {
   }
   await wait(async () => {
     const text = await capture()
-    return /Needs attention\s+12\s*$/m.test(text) && text.includes("Fixture scroll")
+    return text.includes("Fixture scroll 00") && !text.includes("Stale") && !text.includes("Partial")
   }, "all scroll fixtures finish reconciliation")
   const beforeScroll = await capture()
-  const heading = beforeScroll.split("\n").findIndex((line) => line.includes("Needs attention"))
-  const column = beforeScroll.split("\n")[heading]!.indexOf("Needs attention") + 4
+  const heading = beforeScroll.split("\n").findIndex((line) => line.includes("Fixture scroll"))
+  const column = beforeScroll.split("\n")[heading]!.indexOf("Fixture scroll") + 1
   const firstVisible = (text: string) => text.match(/Fixture scroll (\d+)/)?.[1]
   const first = firstVisible(beforeScroll)
   for (let i = 0; i < 8; i++) {
-    await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 4}M`)
+    await tmux("send-keys", "-t", "inbox", "-l", `\x1b[<65;${column};${heading + 1}M`)
   }
   let clickedLabel: string | undefined
   let stableFrames = 0
@@ -474,14 +485,30 @@ try {
   )
   await tmux("resize-window", "-t", "inbox", "-x", "90", "-y", "18")
   await wait(
-    async () => (await capture()).includes("Build ·") && !(await capture()).includes("Needs attention"),
+    async () =>
+      (await capture()).includes("Build ·") && !(await capture()).includes("? Fixture short terminal"),
     "short terminal prompt remains usable",
   )
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
   await wait(async () => (await capture()).includes("Needs attention"), "short terminal picker")
   await save("12-short-picker")
   await tmux("send-keys", "-t", "inbox", "Escape")
+  await wait(async () => !(await capture()).includes("Needs attention"), "short picker closes")
+  await tmux("resize-window", "-t", "inbox", "-x", "160", "-y", "48")
+  await wait(async () => (await capture()).includes("? Fixture short terminal"), "wide attention row returns")
   await client.session.form.cancel({ sessionID: shortOwner.id, formID: shortForm.id })
+  // Native Escape may already have cancelled this fixture while navigating.
+  for (const form of await client.session.form.list({ sessionID: tree.id })) {
+    await client.session.form.cancel({ sessionID: tree.id, formID: form.id })
+  }
+  await wait(async () => {
+    const text = await capture()
+    return !/\? Fixture/.test(text) && !text.includes("Partial") && !text.includes("Stale")
+  }, "last attention row disappears")
+  const emptyScreen = await save("13-empty")
+  assert(!emptyScreen.includes("Needs attention"), "empty inbox leaves no heading")
+  assert(!emptyScreen.includes("Nothing needs attention"), "empty inbox leaves no empty message")
+  assert(!emptyScreen.includes("All projects"), "empty inbox leaves no scope control")
   // Restart only this harness's authenticated server; inventory must recover on reconnect.
   server.kill()
   await server.exited
@@ -497,12 +524,17 @@ try {
     async () => (await capture()).includes("Fixture after reconnect"),
     "attention recovers after server reconnect",
   )
+  await tmux("send-keys", "-t", "inbox", "C-x", "o")
+  await wait(async () => (await capture()).includes("› ?"), "remounted inbox accepts keyboard focus")
   await client.session.form.cancel({ sessionID: recovered.id, formID: recoveredForm.id })
   await wait(
     async () => !(await capture()).includes("Fixture after reconnect"),
     "reconnected request resolves live",
   )
-  await save("13-reconnect")
+  await tmux("send-keys", "-t", "inbox", "-l", "fixture-after-empty")
+  await wait(async () => (await capture()).includes("fixture-after-empty"), "last row restores prompt focus")
+  await tmux("send-keys", "-t", "inbox", "C-u")
+  await save("14-reconnect")
   console.log(`Live packed-plugin smoke passed. Evidence: ${root}`)
 } catch (error) {
   failed = true

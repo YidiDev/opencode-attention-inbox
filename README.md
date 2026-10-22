@@ -1,6 +1,6 @@
 # OpenCode Attention Inbox
 
-A separate, navigation-only OpenCode V2 plugin. **Needs attention** lives at the
+A separate, navigation-only OpenCode V2 plugin. Attention sessions live at the
 bottom of the right sidebar and updates without switching away from your work.
 
 - Pending **permissions** and **questions**, including blocking child sessions.
@@ -15,8 +15,6 @@ communicator integration. This is not session history or multi-server aggregatio
 Compact tab-like rows (synthetic acceptance fixtures):
 
 ```text
-Needs attention 3
-All projects ↔
   !? Fixture foreign question
    ? Fixture worktree question
    ● Fixture completed
@@ -71,8 +69,8 @@ The host's directory loader does not use the repository root's package exports.
 
 | Action | Default |
 | --- | --- |
-| Toggle project / all projects | `Ctrl+X`, then `V`; or click the scope label |
-| Focus inbox | `Ctrl+X`, then `O`; or click the heading |
+| Toggle project / all projects | `Ctrl+X`, then `V`; or command palette |
+| Focus inbox | `Ctrl+X`, then `O` |
 | Select / open / return | `↑` / `↓`, `Enter`, `Esc`, while inbox is focused |
 | Toggle scope while focused | `Tab` |
 | Open next / refresh | Command palette: **Inbox: open next session** / **Inbox: refresh** |
@@ -99,10 +97,12 @@ The plugin does not force the sidebar open or alter your layout settings.
 Each session occupies **one terminal line**, with native theme hover and keyboard
 selection backgrounds. `!` means permission, `?` means question, and `●` means
 successful unread completion; combined indicators retain every attention reason.
-Hover highlights the entire row and shows a status summary in the reserved footer,
-without selecting, stealing focus, scrolling, or acknowledging anything. Keyboard
-selection also has a `›` marker. The footer keeps a fixed height so pointer focus
-does not move rows under your cursor. Duplicate titles get a short inline context
+Hover highlights the entire row without selecting, stealing focus, scrolling, or
+acknowledging anything. Keyboard selection also has a `›` marker. There is no
+heading, divider, scope label, reserved footer, or empty-state message: a healthy
+empty inbox occupies **zero rows**. Only incomplete or failed checks add a muted
+status line; initial synchronization is quiet. When the final row disappears,
+inbox keyboard focus is released. Duplicate titles get a short inline context
 suffix; full project/worktree/parent context and counts remain in the native picker.
 
 ## Attention semantics
@@ -153,8 +153,10 @@ the bounded queue, so large historical inventories can delay discovery. Unchecke
 directories retain their previous badges. New completion evidence waits for the
 active-session read, so incremental discovery never invents a completion.
 
-**Syncing**, **Partial**, **Stale**, and a `?` count qualifier explicitly indicate
-uncertainty; they are not a verified empty inbox. Failed reads preserve last-known
+The picker reports **Syncing**, **Partial**, and **Stale** explicitly. The sidebar
+shows only partial/stale or unresolved-project warnings, not a healthy empty-state
+message. Silence during initial synchronization is not proof of an empty inbox.
+Failed reads preserve last-known
 data. A failed location retains its last-known unresolved badges. Refresh from
 the command palette to retry immediately. Very large inventories and inaccessible
 historical directories can take longer or keep the state partial.

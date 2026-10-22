@@ -1,4 +1,3 @@
-import { memo as _$memo } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
 import { effect as _$effect } from "@opentui/solid";
@@ -6,11 +5,11 @@ import { insert as _$insert } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { use as _$use } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
+import { memo as _$memo } from "@opentui/solid";
 /** @jsxImportSource @opentui/solid */
 import { usePlugin } from "@opencode/plugin/tui";
 import { RenderableEvents } from "@opentui/core";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { statusLabel } from "../attention/derive.js";
 import { openSession } from "./navigation.js";
 import { inboxHealth, rowIndicator, rowTitle, rowWindow } from "./presentation.js";
 import { safeText, truncate } from "./text.js";
@@ -32,13 +31,14 @@ export function Inbox(props) {
   });
   const window = createMemo(() => rowWindow(props.rows.map(row => row.session.id), scrollTop(), props.maxVisibleRows));
   let box;
+  const [keyTarget, setKeyTarget] = createSignal();
   let scroll;
   let previous = null;
   let pressedID;
   const focus = (reveal = true) => {
     // A tab/sidebar can be retained by the host while its layout is hidden.
     // Inspect only our own renderable, never the host's tree or breakpoint.
-    if (!box || box.isDestroyed || !box.visible || box.width <= 0 || box.height <= 0 || box.screenX >= context.renderer.width || box.screenY >= context.renderer.height) return false;
+    if (props.rows.length === 0 || !box || box.isDestroyed || !box.visible || box.width <= 0 || box.height <= 0 || box.screenX >= context.renderer.width || box.screenY >= context.renderer.height) return false;
     if (!box?.focused) previous = context.renderer.currentFocusedRenderable;
     box?.focus();
     setFocused(true);
@@ -61,6 +61,7 @@ export function Inbox(props) {
   createEffect(() => {
     const rows = props.rows;
     if (!rows.some(row => row.session.id === selected())) setSelected(rows[0]?.session.id);
+    if (!rows.length && focused()) dismiss();
   });
   const syncScroll = () => setScrollTop(scroll?.scrollTop ?? 0);
   function revealSelection() {
@@ -87,9 +88,9 @@ export function Inbox(props) {
   };
   context.keymap.layer(() => ({
     mode: "global",
-    target: () => box,
+    target: keyTarget,
     priority: 10,
-    commands: [{
+    commands: keyTarget() ? [{
       id: "attention-inbox.move-down",
       bind: "down",
       run: () => move(1)
@@ -112,201 +113,183 @@ export function Inbox(props) {
       id: "attention-inbox.scope.local",
       bind: "tab",
       run: props.toggleScope
-    }]
+    }] : []
   }));
-  const health = () => inboxHealth(props.snapshot.phase, props.rows.length, props.scope, props.projectKnown);
-  const footer = () => {
-    if (focused()) return "↑↓ select · Enter open · Esc back";
-    const id = hovered();
-    const row = id ? byID().get(id) : undefined;
-    return row ? statusLabel(row) : "";
-  };
+  const health = () => props.snapshot.phase === "partial" || props.snapshot.phase === "stale" || props.snapshot.phase === "ready" && props.scope === "project" && !props.projectKnown ? inboxHealth(props.snapshot.phase, props.rows.length, props.scope, props.projectKnown) : "";
   const measure = () => {
     const viewport = scroll && !scroll.isDestroyed ? scroll.viewport.width : 0;
-    setWidth(Math.max(1, viewport || (box?.width ?? 36) - 2));
+    const available = viewport || box?.width || 0;
+    if (available > 0) setWidth(available);
   };
-  return (() => {
-    var _el$ = _$createElement("box"),
-      _el$2 = _$createElement("text"),
-      _el$3 = _$createElement("text"),
-      _el$8 = _$createElement("text");
-    _$insertNode(_el$, _el$2);
-    _$insertNode(_el$, _el$3);
-    _$insertNode(_el$, _el$8);
-    _$use(value => {
-      box = value;
-      const onBlur = () => setFocused(false);
-      value.on(RenderableEvents.BLURRED, onBlur);
-      onCleanup(() => value.off(RenderableEvents.BLURRED, onBlur));
-    }, _el$);
-    _$setProp(_el$, "flexDirection", "column");
-    _$setProp(_el$, "flexShrink", 1);
-    _$setProp(_el$, "focusable", true);
-    _$setProp(_el$, "border", ["top"]);
-    _$setProp(_el$, "paddingTop", 1);
-    _$setProp(_el$, "onSizeChange", measure);
-    _$setProp(_el$2, "onMouseUp", event => {
-      if (event.button === 0) focus();
-    });
-    _$setProp(_el$2, "wrapMode", "none");
-    _$insert(_el$2, () => truncate(`Needs attention  ${props.rows.length}${props.snapshot.phase !== "ready" || props.scope === "project" && !props.projectKnown ? " · ?" : ""}`, width()));
-    _$setProp(_el$3, "wrapMode", "none");
-    _$setProp(_el$3, "onMouseUp", event => {
-      if (event.button === 0) props.toggleScope();
-    });
-    _$insert(_el$3, () => truncate(`${props.scope === "all" ? "All projects" : "Current project"} ↔`, width()));
-    _$insert(_el$, _$createComponent(Show, {
-      get when() {
-        return health();
-      },
-      get children() {
-        var _el$4 = _$createElement("text");
-        _$setProp(_el$4, "wrapMode", "none");
-        _$insert(_el$4, () => truncate(health(), width()));
-        _$effect(_$p => _$setProp(_el$4, "fg", context.theme.text.muted, _$p));
-        return _el$4;
-      }
-    }), _el$8);
-    _$insert(_el$, _$createComponent(Show, {
-      get when() {
-        return props.rows.length;
-      },
-      get children() {
-        var _el$5 = _$createElement("scrollbox"),
-          _el$6 = _$createElement("box"),
-          _el$7 = _$createElement("box");
-        _$insertNode(_el$5, _el$6);
-        _$insertNode(_el$5, _el$7);
-        _$use(value => {
-          scroll = value;
-          measure();
-          value.verticalScrollBar.on("change", syncScroll);
-          onCleanup(() => value.verticalScrollBar.off("change", syncScroll));
-        }, _el$5);
-        _$setProp(_el$5, "onSizeChange", () => {
-          measure();
-          syncScroll();
-        });
-        _$setProp(_el$5, "onMouseScroll", () => queueMicrotask(syncScroll));
-        _$setProp(_el$5, "flexShrink", 1);
-        _$setProp(_el$6, "flexShrink", 0);
-        _$insert(_el$5, _$createComponent(For, {
-          get each() {
-            return window().ids;
-          },
-          children: id => {
-            const row = () => byID().get(id);
-            const indicator = () => {
-              const current = row();
-              return current ? rowIndicator(current) : "";
-            };
-            const label = () => {
-              const current = row();
-              if (!current) return "";
-              const title = safeText(current.session.title?.trim() || "Untitled session");
-              return rowTitle(current, Math.max(0, width() - Bun.stringWidth(indicator()) - 5), (disambiguation().get(title) ?? 0) > 1);
-            };
-            const active = () => selected() === id && focused();
-            const states = () => ({
-              hovered: hovered() === id,
-              selected: active(),
-              focused: active()
-            });
-            onCleanup(() => {
-              if (hovered() === id) setHovered(undefined);
-            });
-            return (// biome-ignore lint/a11y/useKeyWithMouseEvents: Native list keyboard focus is on the parent; hover must never focus a row.
-              (() => {
-                var _el$9 = _$createElement("box"),
-                  _el$0 = _$createElement("text"),
-                  _el$1 = _$createElement("span");
-                _$insertNode(_el$9, _el$0);
-                _$setProp(_el$9, "id", `attention-inbox-${id}`);
-                _$setProp(_el$9, "flexDirection", "row");
-                _$setProp(_el$9, "height", 1);
-                _$setProp(_el$9, "flexShrink", 0);
-                _$setProp(_el$9, "width", "100%");
-                _$setProp(_el$9, "paddingLeft", 1);
-                _$setProp(_el$9, "paddingRight", 1);
-                _$setProp(_el$9, "onMouseOver", () => setHovered(id));
-                _$setProp(_el$9, "onMouseOut", () => setHovered(undefined));
-                _$setProp(_el$9, "onMouseDown", event => {
-                  if (event.button === 0) {
-                    pressedID = id;
-                    setSelected(id);
-                    // Pointer focus must not move virtualized content under the pointer.
-                    focus(false);
-                  }
-                });
-                _$setProp(_el$9, "onMouseUp", event => {
-                  if (event.button !== 0) return;
-                  const pressed = pressedID;
-                  pressedID = undefined;
-                  const current = row();
-                  // A reorder/removal between press and release cancels the click.
-                  if (pressed === id && current) activate(current);
-                });
-                _$insertNode(_el$0, _el$1);
-                _$setProp(_el$0, "wrapMode", "none");
-                _$insert(_el$0, () => active() ? "› " : "  ", _el$1);
-                _$insert(_el$1, indicator);
-                _$insert(_el$0, () => ` ${label()}`, null);
-                _$effect(_p$ => {
-                  var _v$8 = context.theme.background.action.secondary.state(states()),
-                    _v$9 = context.theme.text.action.secondary.state(states()),
-                    _v$0 = {
-                      fg: row()?.permissions ? context.theme.text.feedback.warning.base : context.theme.text.feedback.info.base
-                    };
-                  _v$8 !== _p$.e && (_p$.e = _$setProp(_el$9, "backgroundColor", _v$8, _p$.e));
-                  _v$9 !== _p$.t && (_p$.t = _$setProp(_el$0, "fg", _v$9, _p$.t));
-                  _v$0 !== _p$.a && (_p$.a = _$setProp(_el$1, "style", _v$0, _p$.a));
-                  return _p$;
-                }, {
-                  e: undefined,
-                  t: undefined,
-                  a: undefined
-                });
-                return _el$9;
-              })()
-            );
+  return _$createComponent(Show, {
+    get when() {
+      return props.rows.length || health();
+    },
+    get children() {
+      var _el$ = _$createElement("box");
+      _$use(value => {
+        box = value;
+        setKeyTarget(value);
+        const onBlur = () => setFocused(false);
+        value.on(RenderableEvents.BLURRED, onBlur);
+        onCleanup(() => value.off(RenderableEvents.BLURRED, onBlur));
+        onCleanup(() => {
+          if (box === value) {
+            // The renderer may blur a removed node before reactive effects run.
+            // Restore the saved input only if removal left no other focus owner.
+            const current = context.renderer.currentFocusedRenderable;
+            if (previous && !previous.isDestroyed && (!current || current === value)) previous.focus();
+            previous = null;
+            setFocused(false);
+            box = undefined;
+            setKeyTarget(undefined);
           }
-        }), _el$7);
-        _$setProp(_el$7, "flexShrink", 0);
-        _$effect(_p$ => {
-          var _v$ = props.maxVisibleRows,
-            _v$2 = window().before,
-            _v$3 = window().after;
-          _v$ !== _p$.e && (_p$.e = _$setProp(_el$5, "maxHeight", _v$, _p$.e));
-          _v$2 !== _p$.t && (_p$.t = _$setProp(_el$6, "height", _v$2, _p$.t));
-          _v$3 !== _p$.a && (_p$.a = _$setProp(_el$7, "height", _v$3, _p$.a));
-          return _p$;
-        }, {
-          e: undefined,
-          t: undefined,
-          a: undefined
         });
-        return _el$5;
-      }
-    }), _el$8);
-    _$setProp(_el$8, "height", 1);
-    _$setProp(_el$8, "wrapMode", "none");
-    _$insert(_el$8, () => truncate(footer(), width()));
-    _$effect(_p$ => {
-      var _v$4 = context.theme.border.base,
-        _v$5 = context.theme.text.base,
-        _v$6 = context.theme.text.muted,
-        _v$7 = context.theme.text.muted;
-      _v$4 !== _p$.e && (_p$.e = _$setProp(_el$, "borderColor", _v$4, _p$.e));
-      _v$5 !== _p$.t && (_p$.t = _$setProp(_el$2, "fg", _v$5, _p$.t));
-      _v$6 !== _p$.a && (_p$.a = _$setProp(_el$3, "fg", _v$6, _p$.a));
-      _v$7 !== _p$.o && (_p$.o = _$setProp(_el$8, "fg", _v$7, _p$.o));
-      return _p$;
-    }, {
-      e: undefined,
-      t: undefined,
-      a: undefined,
-      o: undefined
-    });
-    return _el$;
-  })();
+      }, _el$);
+      _$setProp(_el$, "flexDirection", "column");
+      _$setProp(_el$, "flexShrink", 1);
+      _$setProp(_el$, "focusable", true);
+      _$setProp(_el$, "onSizeChange", measure);
+      _$insert(_el$, _$createComponent(Show, {
+        get when() {
+          return health();
+        },
+        get children() {
+          var _el$2 = _$createElement("text");
+          _$setProp(_el$2, "wrapMode", "none");
+          _$insert(_el$2, () => truncate(health(), width()));
+          _$effect(_$p => _$setProp(_el$2, "fg", context.theme.text.muted, _$p));
+          return _el$2;
+        }
+      }), null);
+      _$insert(_el$, _$createComponent(Show, {
+        get when() {
+          return props.rows.length;
+        },
+        get children() {
+          var _el$3 = _$createElement("scrollbox"),
+            _el$4 = _$createElement("box"),
+            _el$5 = _$createElement("box");
+          _$insertNode(_el$3, _el$4);
+          _$insertNode(_el$3, _el$5);
+          _$use(value => {
+            scroll = value;
+            measure();
+            value.verticalScrollBar.on("change", syncScroll);
+            onCleanup(() => value.verticalScrollBar.off("change", syncScroll));
+            onCleanup(() => {
+              if (scroll === value) scroll = undefined;
+            });
+          }, _el$3);
+          _$setProp(_el$3, "onSizeChange", () => {
+            measure();
+            syncScroll();
+          });
+          _$setProp(_el$3, "onMouseScroll", () => queueMicrotask(syncScroll));
+          _$setProp(_el$3, "flexShrink", 1);
+          _$setProp(_el$4, "flexShrink", 0);
+          _$insert(_el$3, _$createComponent(For, {
+            get each() {
+              return window().ids;
+            },
+            children: id => {
+              const row = () => byID().get(id);
+              const indicator = () => {
+                const current = row();
+                return current ? rowIndicator(current) : "";
+              };
+              const label = () => {
+                const current = row();
+                if (!current) return "";
+                const title = safeText(current.session.title?.trim() || "Untitled session");
+                return rowTitle(current, Math.max(0, width() - Bun.stringWidth(indicator()) - 5), (disambiguation().get(title) ?? 0) > 1);
+              };
+              const active = () => selected() === id && focused();
+              const states = () => ({
+                hovered: hovered() === id,
+                selected: active(),
+                focused: active()
+              });
+              onCleanup(() => {
+                if (hovered() === id) setHovered(undefined);
+              });
+              return (// biome-ignore lint/a11y/useKeyWithMouseEvents: Native list keyboard focus is on the parent; hover must never focus a row.
+                (() => {
+                  var _el$6 = _$createElement("box"),
+                    _el$7 = _$createElement("text"),
+                    _el$8 = _$createElement("span");
+                  _$insertNode(_el$6, _el$7);
+                  _$setProp(_el$6, "id", `attention-inbox-${id}`);
+                  _$setProp(_el$6, "flexDirection", "row");
+                  _$setProp(_el$6, "height", 1);
+                  _$setProp(_el$6, "flexShrink", 0);
+                  _$setProp(_el$6, "width", "100%");
+                  _$setProp(_el$6, "paddingLeft", 1);
+                  _$setProp(_el$6, "paddingRight", 1);
+                  _$setProp(_el$6, "onMouseOver", () => setHovered(id));
+                  _$setProp(_el$6, "onMouseOut", () => setHovered(undefined));
+                  _$setProp(_el$6, "onMouseDown", event => {
+                    if (event.button === 0) {
+                      pressedID = id;
+                      setSelected(id);
+                      // Pointer focus must not move virtualized content under the pointer.
+                      focus(false);
+                    }
+                  });
+                  _$setProp(_el$6, "onMouseUp", event => {
+                    if (event.button !== 0) return;
+                    const pressed = pressedID;
+                    pressedID = undefined;
+                    const current = row();
+                    // A reorder/removal between press and release cancels the click.
+                    if (pressed === id && current) activate(current);
+                  });
+                  _$insertNode(_el$7, _el$8);
+                  _$setProp(_el$7, "wrapMode", "none");
+                  _$insert(_el$7, () => active() ? "› " : "  ", _el$8);
+                  _$insert(_el$8, indicator);
+                  _$insert(_el$7, () => ` ${label()}`, null);
+                  _$effect(_p$ => {
+                    var _v$5 = context.theme.background.action.secondary.state(states()),
+                      _v$6 = context.theme.text.action.secondary.state(states()),
+                      _v$7 = {
+                        fg: row()?.permissions ? context.theme.text.feedback.warning.base : context.theme.text.feedback.info.base
+                      };
+                    _v$5 !== _p$.e && (_p$.e = _$setProp(_el$6, "backgroundColor", _v$5, _p$.e));
+                    _v$6 !== _p$.t && (_p$.t = _$setProp(_el$7, "fg", _v$6, _p$.t));
+                    _v$7 !== _p$.a && (_p$.a = _$setProp(_el$8, "style", _v$7, _p$.a));
+                    return _p$;
+                  }, {
+                    e: undefined,
+                    t: undefined,
+                    a: undefined
+                  });
+                  return _el$6;
+                })()
+              );
+            }
+          }), _el$5);
+          _$setProp(_el$5, "flexShrink", 0);
+          _$effect(_p$ => {
+            var _v$ = props.maxVisibleRows,
+              _v$2 = Math.min(props.rows.length, props.maxVisibleRows),
+              _v$3 = window().before,
+              _v$4 = window().after;
+            _v$ !== _p$.e && (_p$.e = _$setProp(_el$3, "maxHeight", _v$, _p$.e));
+            _v$2 !== _p$.t && (_p$.t = _$setProp(_el$3, "height", _v$2, _p$.t));
+            _v$3 !== _p$.a && (_p$.a = _$setProp(_el$4, "height", _v$3, _p$.a));
+            _v$4 !== _p$.o && (_p$.o = _$setProp(_el$5, "height", _v$4, _p$.o));
+            return _p$;
+          }, {
+            e: undefined,
+            t: undefined,
+            a: undefined,
+            o: undefined
+          });
+          return _el$3;
+        }
+      }), null);
+      return _el$;
+    }
+  });
 }

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, DialogSelectOptions, KeymapCommand } from "@opencode/plugin/tui/context"
 import { type JSX, testRender } from "@opentui/solid"
-import { createSignal } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import tuiPlugin from "../src/tui.js"
 import { session, theme, until } from "./support.js"
 
@@ -51,7 +51,17 @@ test("mounted setup focuses the active footer, opens next, uses route project, a
     },
     keymap: {
       layer: (get: () => { commands: KeymapCommand[] }) => {
-        for (const command of get().commands) commands.set(command.id!, command)
+        let ids: string[] = []
+        const clear = () => {
+          for (const id of ids) commands.delete(id)
+        }
+        createEffect(() => {
+          clear()
+          const current = get().commands
+          ids = current.map((command) => command.id!)
+          for (const command of current) commands.set(command.id!, command)
+        })
+        onCleanup(clear)
       },
     },
     ui: {
@@ -88,7 +98,7 @@ test("mounted setup focuses the active footer, opens next, uses route project, a
     await view.renderOnce()
     await commands.get("attention-inbox.focus")!.run!()
     await view.renderOnce()
-    expect(view.captureCharFrame()).toContain("Esc back")
+    expect(view.captureCharFrame()).toContain("› ?")
     expect(picker).toBeUndefined()
     await commands.get("attention-inbox.dismiss")!.run!()
     await commands.get("attention-inbox.scope.toggle")!.run!()
