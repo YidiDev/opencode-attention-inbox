@@ -15,6 +15,7 @@ import {
   validateManifest,
   validateReleaseContext,
 } from "./release-policy.ts"
+import { verifyPublication } from "./release-verify.ts"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const output = join(root, ".release")
@@ -155,28 +156,17 @@ async function publish() {
 }
 async function verify() {
   const { data } = await artifact()
-  for (let attempt = 0; attempt < 15; attempt++) {
-    const meta = await json(`${registry}/${packageName}/${data.version}`)
-    const dist = meta?.dist as { integrity?: string; tarball?: string } | undefined
-    if (meta && dist?.integrity !== data.integrity)
-      throw new Error("Registry version integrity does not match tested archive")
-    if (dist?.tarball) {
-      if (dist.tarball !== `${registry}/${packageName}/-/${data.filename}`)
-        throw new Error("Unexpected registry tarball URL")
-      const response = await fetch(dist.tarball, { signal: AbortSignal.timeout(30_000), redirect: "error" })
+  await verifyPublication(data, {
+    json,
+    async bytes(url) {
+      const response = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: "error" })
       if (!response.ok) throw new Error("Registry tarball download failed")
-      const bytes = new Uint8Array(await response.arrayBuffer())
-      if (hash(bytes, "sha256", "hex") !== data.sha256)
-        throw new Error("Published bytes differ from tested bytes")
-      const info = await json(`${registry}/${packageName}`)
-      if ((info?.["dist-tags"] as Record<string, string> | undefined)?.[data.distTag] !== data.version)
-        throw new Error("Registry distribution tag does not match release")
-      console.log(`Verified registry bytes and ${data.distTag} for ${data.version}`)
-      return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2_000))
-  }
-  throw new Error("Registry version did not become available")
+      return new Uint8Array(await response.arrayBuffer())
+    },
+    now: Date.now,
+    sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  })
+  console.log(`Verified registry bytes and ${data.distTag} for ${data.version}`)
 }
 export async function main(command: string | undefined) {
   if (command === "pack") return pack()

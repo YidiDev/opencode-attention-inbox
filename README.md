@@ -26,8 +26,8 @@ Compact tab-like rows (synthetic acceptance fixtures):
 ## Installation
 
 Built against **OpenCode 2.1.4**, Bun **1.4.0**, Linux x64. The V2 plugin API is
-experimental; other host versions are not yet verified. The 1.0 release line is
-currently in release-candidate validation; see GitHub Releases for published versions.
+experimental; other host versions are not yet verified. Stable plugin release:
+**1.0.0**. See GitHub Releases for checksums and release notes.
 
 Add a published, version-pinned npm package to global
 `~/.config/opencode/cli.json` (or `$XDG_CONFIG_HOME/opencode/cli.json`):
@@ -35,12 +35,12 @@ Add a published, version-pinned npm package to global
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["opencode-attention-inbox@1.0.0-rc.4"]
+  "plugins": ["opencode-attention-inbox@1.0.0"]
 }
 ```
 
 Merge it with existing plugins/settings; do not replace the whole file. Stable
-1.0.0 will be published under npm `latest`, prereleases under `next`. OpenCode
+Stable versions are published under npm `latest`, prereleases under `next`. OpenCode
 loads the compiled package directly: users do not need to clone or build it.
 
 ### Local development installation
