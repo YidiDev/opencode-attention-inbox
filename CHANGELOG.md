@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.0.0-rc.3
+
+- Exercise GitHub Actions trusted publishing with npm OIDC before stable v1.
+- Preserve the registry-tested RC2 plugin behavior, public authorship, and upstream MIT notices.
+
 ## 1.0.0-rc.2
 
 - First publishable public v1 candidate, with YidiDev authorship and retained upstream MIT attribution.

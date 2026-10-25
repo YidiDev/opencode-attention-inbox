@@ -29,13 +29,13 @@ Built against **OpenCode 2.1.4**, Bun **1.4.0**, Linux x64. The V2 plugin API is
 experimental; other host versions are not yet verified. The 1.0 release line is
 currently in release-candidate validation; see GitHub Releases for published versions.
 
-Once the version is published, add the version-pinned npm package to global
+Add a published, version-pinned npm package to global
 `~/.config/opencode/cli.json` (or `$XDG_CONFIG_HOME/opencode/cli.json`):
 
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["opencode-attention-inbox@1.0.0-rc.2"]
+  "plugins": ["opencode-attention-inbox@1.0.0-rc.3"]
 }
 ```
 
