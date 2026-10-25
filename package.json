@@ -1,7 +1,14 @@
 {
   "name": "opencode-attention-inbox",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0-rc.1",
+  "author": {
+    "name": "YidiDev",
+    "url": "https://github.com/YidiDev"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "description": "OpenCode V2 sidebar inbox for permissions, questions and unread completions.",
   "type": "module",
   "license": "MIT",
@@ -21,7 +28,9 @@
     "NOTICE",
     "SECURITY.md",
     "CONTRIBUTING.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "RELEASING.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "keywords": [
     "opencode",
@@ -46,6 +55,7 @@
     "test:live": "bun run scripts/live-smoke.ts",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run test:coverage",
     "audit": "bun audit",
+    "release:pack": "bun run scripts/release.ts pack",
     "prepublishOnly": "bun run check"
   },
   "dependencies": {

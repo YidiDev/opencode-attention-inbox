@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 1.0.0-rc.1
+
+First public release candidate of OpenCode Attention Inbox, created and maintained
+by YidiDev, derived from the MIT-licensed session-history project by Yash Patel.
+
+- Compact, host-themed attention rows for pending permissions/questions and native
+  successful unread completions; no inline approvals or automatic answers.
+- Project/worktree and server-wide scopes, native navigation, live reconciliation,
+  keyboard and mouse controls, hover highlighting and zero-height healthy emptiness.
+- Tested baseline: OpenCode 2.1.4 on Linux x64. Child navigation uses the native
+  Subagents panel; other platforms/host versions are not yet supported.
+- Signed version-tag release process, exact-archive acceptance, token-free npm
+  publishing after bootstrap, registry verification and GitHub release assets.
+
+### Development history
+
 - Remove sidebar heading, scope label, divider, padding, and reserved footer; show
   only session rows and compact uncertainty warnings, with zero space for a healthy
   empty inbox and safe focus release when its final row disappears.

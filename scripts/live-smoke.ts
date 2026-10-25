@@ -4,6 +4,17 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { OpenCode } from "@opencode/client"
 import { build } from "./build.js"
+import { packageName, releaseVersion, validateArchivePaths } from "./release-policy.ts"
+
+const arguments_ = process.argv.slice(2)
+const mode = arguments_[0]
+if (arguments_.length && (!(mode === "--tarball" || mode === "--package") || arguments_.length !== 2))
+  throw new Error("Usage: live-smoke.ts [--tarball archive.tgz | --package opencode-attention-inbox@version]")
+const registryPackage = mode === "--package" ? arguments_[1] : undefined
+if (registryPackage) {
+  if (!registryPackage.startsWith(`${packageName}@`)) throw new Error("Unexpected registry package")
+  releaseVersion(registryPackage.slice(packageName.length + 1))
+}
 
 const root = await mkdtemp("/tmp/opencode/attention-inbox-live-").catch((error: NodeJS.ErrnoException) => {
   if (error.code !== "EACCES" && error.code !== "ENOENT") throw error
@@ -75,21 +86,35 @@ const save = async (name: string) => {
 const assert = (condition: unknown, label: string) => {
   if (!condition) throw new Error(label)
 }
-await build()
-// Exercise an unpacked npm archive inside node_modules, not the source checkout.
-const packed = JSON.parse(
-  await run(["npm", "pack", "--ignore-scripts", "--json", "--pack-destination", root], repo),
-) as { filename: string }[]
+let archive: string | undefined
+if (!registryPackage) {
+  if (mode === "--tarball") archive = resolve(arguments_[1]!)
+  else {
+    await build()
+    const packed = JSON.parse(
+      await run(["npm", "pack", "--ignore-scripts", "--json", "--pack-destination", root], repo),
+    ) as { filename: string }[]
+    archive = join(root, packed[0]!.filename)
+  }
+  validateArchivePaths((await run(["tar", "-tzf", archive])).trim().split("\n"))
+}
+// Release mode installs the exact tested archive; registry mode exercises the
+// host's real package resolver with an empty HOME/config/cache.
 const installed = join(root, "node_modules", "opencode-attention-inbox")
-await mkdir(installed, { recursive: true })
-await run(["tar", "-xzf", join(root, packed[0]!.filename), "--strip-components=1", "-C", installed])
+if (mode === "--tarball") {
+  await writeFile(join(root, "package.json"), JSON.stringify({ private: true, type: "module" }))
+  await run(["bun", "add", "--ignore-scripts", archive!])
+} else if (archive) {
+  await mkdir(installed, { recursive: true })
+  await run(["tar", "-xzf", archive, "--strip-components=1", "-C", installed])
+}
 const config = {
   $schema: "https://opencode.ai/v2/cli.json",
   highlights: false,
   animations: false,
   attention: { notifications: false, sound: false },
   tabs: { mode: "on", scope: "global" },
-  plugins: [{ package: join(installed, "dist"), options: { pollIntervalMs: 5000 } }],
+  plugins: [{ package: registryPackage ?? join(installed, "dist"), options: { pollIntervalMs: 5000 } }],
 }
 await writeFile(join(env.XDG_CONFIG_HOME!, "opencode", "cli.json"), JSON.stringify(config))
 for (const name of ["a", "b"]) {
