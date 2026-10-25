@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   existingVersionMatches,
   packageName,
+  parsePackResult,
   releaseNotes,
   releaseVersion,
   validateArchivePaths,
@@ -28,6 +29,32 @@ const required = [
   "RELEASING.md",
 ].map((path) => `package/${path}`)
 describe("release policy", () => {
+  test("npm 11 and 12 pack output identify exactly one safe release archive", () => {
+    const result = {
+      name: packageName,
+      version: "1.0.0-rc.2",
+      filename: `${packageName}-1.0.0-rc.2.tgz`,
+      files: [{ path: "package.json" }],
+    }
+    for (const shape of [[result], { [packageName]: result }])
+      expect(parsePackResult(JSON.stringify(shape))).toEqual({
+        filename: result.filename,
+        files: result.files,
+      })
+    for (const invalid of [
+      null,
+      [],
+      [result, result],
+      { other: result },
+      { [packageName]: result, other: result },
+      [{ ...result, name: "other" }],
+      [{ ...result, filename: "../archive.tgz" }],
+      [{ ...result, version: "1.0.0-rc.02" }],
+      [{ ...result, files: [null] }],
+      [{ ...result, files: [{ path: 123 }] }],
+    ])
+      expect(() => parsePackResult(JSON.stringify(invalid))).toThrow()
+  })
   test("forks, PRs, arbitrary branches and tag/version mismatches cannot release", () => {
     const context = {
       GITHUB_ACTIONS: "true",

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import {
   existingVersionMatches,
   packageName,
+  parsePackResult,
   releaseNotes,
   releaseVersion,
   validateArchivePaths,
@@ -99,10 +100,10 @@ async function validateRef() {
 async function pack() {
   const version = await validateRef()
   await mkdir(output, { recursive: true })
-  const packed = JSON.parse(
+  const packed = parsePackResult(
     run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", output]),
-  ) as { filename: string }[]
-  const filename = packed[0]?.filename
+  )
+  const filename = packed.filename
   if (filename !== `${packageName}-${version.version}.tgz`) throw new Error("Unexpected packed filename")
   const path = join(output, filename)
   validateManifest(await inspect(path), version.tag, await readFile(join(root, "CHANGELOG.md"), "utf8"))

@@ -61,14 +61,15 @@ No passwords, OTPs, private keys or npm tokens belong in GitHub/chat/source file
 
 npm requires an existing package before adding a trusted publisher:
 
-1. Prepare/tag **1.0.0-rc.1**. If the registry package does not exist, the workflow
+1. Prepare/tag **1.0.0-rc.2**. The immutable RC1 tag failed validation before
+   publication; it is not moved or reused. If the registry package does not exist, the workflow
    stops at the draft release and validated archive; it does not attempt OIDC.
 2. Download the tested archive and SHA256SUMS from that run/draft. Check its hash.
    Using the owner's interactive npm login and 2FA, bootstrap **only that archive**:
 
    ```sh
    sha256sum -c SHA256SUMS
-   npm publish ./opencode-attention-inbox-1.0.0-rc.1.tgz --ignore-scripts --access public --tag next
+   npm publish ./opencode-attention-inbox-1.0.0-rc.2.tgz --ignore-scripts --access public --tag next
    ```
 
 3. In npm package Settings → Trusted Publisher, configure **GitHub Actions**:
@@ -86,7 +87,7 @@ npm requires an existing package before adding a trusted publisher:
 
 4. Rerun the tag workflow: it accepts an existing version only when its bytes are
    identical, verifies registry installation, and publishes the GitHub prerelease.
-5. Publish **1.0.0-rc.2** through the tag workflow to actually exercise OIDC, then
+5. Publish **1.0.0-rc.3** through the tag workflow to actually exercise OIDC, then
    **1.0.0** after acceptance. npm requires a new trust configuration to complete
    its first successful publish within two days; recreate expired configurations.
 6. Restrict traditional publishing to 2FA and disallow tokens. Bind the GitHub

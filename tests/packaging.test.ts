@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "../scripts/build.js"
+import { parsePackResult } from "../scripts/release-policy.ts"
 
 const repo = join(import.meta.dir, "..")
 const files = async (root: string, prefix = ""): Promise<string[]> => {
@@ -49,8 +50,7 @@ test("npm archive includes entrypoints, attribution and no development artifacts
     child.exited,
   ])
   expect(code, stderr).toBe(0)
-  const packed = JSON.parse(text) as { files: { path: string }[] }[]
-  const paths = packed[0]!.files.map((file) => file.path)
+  const paths = parsePackResult(text).files.map((file) => file.path)
   for (const path of [
     "dist/index.js",
     "dist/tui.js",
