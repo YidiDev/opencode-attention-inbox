@@ -6,6 +6,8 @@ bottom of the right sidebar and update without switching away from your work.
 Created and maintained by **[YidiDev](https://github.com/YidiDev)**. MIT licensed;
 derived from Yash Patel's session-history plugin with original notices retained.
 
+Independent community plugin; not built by or affiliated with the OpenCode team.
+
 - Pending **permissions** and **questions**, including blocking child sessions.
 - Successful unread completions, using OpenCode's native idle/viewed markers.
 - Click a row to focus/open that session, preserving its own project and worktree.
@@ -39,7 +41,7 @@ Add a published, version-pinned npm package to global
 }
 ```
 
-Merge it with existing plugins/settings; do not replace the whole file. Stable
+Merge it with existing plugins/settings; do not replace the whole file.
 Stable versions are published under npm `latest`, prereleases under `next`. OpenCode
 loads the compiled package directly: users do not need to clone or build it.
 
