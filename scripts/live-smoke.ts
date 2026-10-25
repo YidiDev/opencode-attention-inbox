@@ -394,15 +394,26 @@ try {
   await wait(async () => (await capture()).includes("/reload"), "reload command entered")
   await tmux("send-keys", "-t", "inbox", "Enter")
   await wait(async () => !(await capture()).includes("/reload"), "reload command consumed")
-  await wait(
-    async () =>
-      (await capture()).includes("? Fixture worktree question") && (await capture()).includes("Build ·"),
-    "reload restores saved scope",
-  )
+  await wait(async () => {
+    const text = await capture()
+    return text.includes("Configuration reloaded") && !text.includes("Reloading configuration")
+  }, "native configuration reload finishes")
+  // Directly-created synthetic forms can be cancelled by the host's reload
+  // lifecycle. Re-seed only our fixture if needed, in the other project from
+  // the active completion tab: seeing it still proves saved all-project scope.
+  if (!(await client.session.form.list({ sessionID: tree.id })).length) await makeForm(tree.id)
+  await wait(async () => {
+    const text = await capture()
+    return (
+      text.split("\n").slice(2).join("\n").includes("? Fixture worktree question") && text.includes("Build ·")
+    )
+  }, "reload restores saved scope")
   await tmux("send-keys", "-t", "inbox", "C-x", "o")
   await wait(async () => (await capture()).includes("› ?"), "focus still works after reload")
   assert(
-    (await capture()).split("? Fixture worktree question").length === 2,
+    // The native top tab may display the same question indicator/title. It is
+    // not a second inbox row; inspect the body below the tab strip.
+    (await capture()).split("\n").slice(2).join("\n").split("? Fixture worktree question").length === 2,
     "reload must not duplicate rows",
   )
   await save("09-reload")
@@ -412,9 +423,17 @@ try {
     join(env.XDG_CONFIG_HOME!, "opencode", "cli.json"),
     JSON.stringify({ ...config, tabs: { mode: "off", scope: "global" } }),
   )
+  await wait(async () => {
+    const text = await capture()
+    return (
+      !text.split("\n")[0]?.includes("Fixture primary") &&
+      text.includes("Configuration reloaded") &&
+      !text.includes("Reloading configuration")
+    )
+  }, "tabs-disabled configuration reload finishes")
   const noTabsForm = await makeForm(other.id)
   await wait(
-    async () => (await capture()).includes("Fixture foreign question"),
+    async () => (await capture()).includes("? Fixture foreign question"),
     "root request appears with tabs off",
   )
   await clickText("Fixture foreign question")
