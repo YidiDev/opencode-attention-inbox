@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { OpenCode } from "@opencode/client"
 import { build } from "./build.js"
-import { packageName, releaseVersion, validateArchivePaths } from "./release-policy.ts"
+import { packageName, parsePackResult, releaseVersion, validateArchivePaths } from "./release-policy.ts"
 
 const arguments_ = process.argv.slice(2)
 const mode = arguments_[0]
@@ -91,10 +91,10 @@ if (!registryPackage) {
   if (mode === "--tarball") archive = resolve(arguments_[1]!)
   else {
     await build()
-    const packed = JSON.parse(
+    const packed = parsePackResult(
       await run(["npm", "pack", "--ignore-scripts", "--json", "--pack-destination", root], repo),
-    ) as { filename: string }[]
-    archive = join(root, packed[0]!.filename)
+    )
+    archive = join(root, packed.filename)
   }
   validateArchivePaths((await run(["tar", "-tzf", archive])).trim().split("\n"))
 }

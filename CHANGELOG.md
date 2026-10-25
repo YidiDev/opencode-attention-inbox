@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.0.0-rc.2
+
+- First publishable public v1 candidate, with YidiDev authorship and retained upstream MIT attribution.
+- Support npm 11 and npm 12 archive metadata while preserving exact-tarball release verification.
+- Correct native reload acceptance synchronization and distinguish native tabs from inbox rows.
+
 ## 1.0.0-rc.1
 
 First public release candidate of OpenCode Attention Inbox, created and maintained

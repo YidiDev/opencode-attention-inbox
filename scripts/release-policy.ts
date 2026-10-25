@@ -15,6 +15,29 @@ export function releaseVersion(version: string) {
   return { version, tag: `v${version}`, distTag: match[4] ? "next" : "latest", prerelease: !!match[4] }
 }
 
+/** npm 11 uses a one-element array; npm 12 keys results by package name. */
+export function parsePackResult(text: string): { filename: string; files: { path: string }[] } {
+  const parsed = JSON.parse(text)
+  const entries = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object" && Object.keys(parsed).length === 1
+      ? [parsed[packageName]]
+      : []
+  const result = entries[0]
+  if (
+    entries.length !== 1 ||
+    !result ||
+    result.name !== packageName ||
+    typeof result.version !== "string" ||
+    result.filename !== `${packageName}-${result.version}.tgz` ||
+    !Array.isArray(result.files) ||
+    !result.files.every((file: unknown) => file && typeof (file as { path?: unknown }).path === "string")
+  )
+    throw new Error("Expected one npm pack result for the release package")
+  releaseVersion(result.version)
+  return { filename: result.filename, files: result.files }
+}
+
 export function validateReleaseContext(context: Record<string, string | undefined>, tag: string) {
   if (!context.GITHUB_ACTIONS) return
   if (context.GITHUB_REPOSITORY !== repository) throw new Error("Untrusted release repository")
