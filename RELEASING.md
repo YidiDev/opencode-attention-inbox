@@ -45,7 +45,9 @@ The workflow creates a draft GitHub Release with the tested `.tgz`, SHA256SUMS a
 release.json (commit and SHA-512 integrity). The npm job uses **OIDC**, with no
 dependency installation or package lifecycle scripts and no long-lived npm token.
 After publication it compares downloaded registry bytes with the tested archive
-and verifies the distribution tag. A separate unprivileged job tests OpenCode's
+and verifies the distribution tag. Missing versions and lagging tags may propagate
+for up to five minutes; different integrity or archive bytes fail immediately.
+A separate unprivileged job tests OpenCode's
 actual registry loader with an empty HOME/config/cache. Only then is the GitHub
 Release published. Prereleases never become GitHub latest.
 
@@ -102,6 +104,9 @@ normal tag-triggered releases. npm automatically supplies provenance for OIDC
 publishes from a public repository to a public package; the interactive RC2 bootstrap
 does not have that provenance, so a subsequent candidate verifies the final provenance path. A staged
 placeholder alone is not a tested plugin release or proof of OIDC publication.
+
+For this project's launch, RC2 was owner-published and RC4 completed the actual
+OIDC/provenance, byte-verification and fresh-registry acceptance path before v1.
 
 ## Failed or bad releases
 

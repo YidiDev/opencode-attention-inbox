@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 1.0.0
+
+First stable release, created and maintained by YidiDev, retaining Yash Patel's
+upstream MIT attribution and copyright.
+
+- Compact native-themed sidebar rows for pending permissions, questions, and successful unread sessions.
+- Shared project/worktree or connected-server scope, hover highlighting, keyboard navigation, and no empty-state chrome.
+- Navigation only: no automatic answers, approvals, or background completion acknowledgement.
+- Supported baseline: OpenCode 2.1.4 on Linux x64; child sessions use the native Subagents panel.
+- Signed immutable tags, npm trusted OIDC publishing with provenance, exact-archive and fresh-registry TUI acceptance, and GitHub release checksums.
+- Allow bounded registry metadata propagation while failing immediately on mismatched archive bytes.
+
 ## 1.0.0-rc.4
 
 - Require npm's structured publication acknowledgement and explicit provenance generation.

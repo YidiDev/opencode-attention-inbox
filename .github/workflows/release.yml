@@ -111,7 +111,7 @@ jobs:
     if: github.event_name == 'push' && needs.validate.outputs.exists == 'true'
     environment: npm
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
