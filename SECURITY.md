@@ -1,17 +1,19 @@
 # Security
 
-This repository is currently private and the npm package is unpublished.
 The supported baseline is Linux x64, Bun 1.4.0 and OpenCode 2.1.4.
 
 ## Reporting
 
-Do not open an issue containing a vulnerability, secret or session data. Repository
-collaborators with access can draft a private advisory at
+Do not open an issue containing a vulnerability, secret or session data. Use
+GitHub's private vulnerability reporting route:
 https://github.com/YidiDev/opencode-attention-inbox/security/advisories/new
-for owner **YidiDev**. If your access does not permit this, contact the owner using
-your existing private collaboration channel; there is no public reporting mailbox.
-Private vulnerability reporting must be enabled and externally verified before
-the repository is made public. No response-time guarantee is currently offered.
+for maintainer **YidiDev**. Private vulnerability reporting must be enabled and
+externally verified as part of the public launch. If the route is unavailable,
+do not post sensitive details publicly: open a non-sensitive issue asking the
+maintainer for a private reporting channel. No response-time guarantee is offered.
+
+Security fixes target the latest supported 1.x version; prereleases and unsupported
+host/platform combinations have no separate long-term support guarantee.
 
 Include affected versions, a minimal sanitized reproduction and impact. Never
 include real credentials, databases, prompts, answers or unsanitized captures.

@@ -1,4 +1,7 @@
-OpenCode Attention Inbox derives from opencode-session-history, version 0.1.5.
+OpenCode Attention Inbox is created and maintained by YidiDev.
+Copyright (c) 2026 YidiDev for original contributions and modifications.
+
+It derives from opencode-session-history by Yash Patel, version 0.1.5.
 Upstream: https://github.com/ypxcs/opencode-session-history
 Base: 2d61f0cd5205ef673fb547a3a5e7b454796c026b
 License: MIT; see LICENSE for the retained original notice.
@@ -7,3 +10,8 @@ This derivative replaces session-history behavior with a native attention inbox,
 new reconciliation/data rules, scoped navigation, controls, and tests. It retains
 the upstream Solid universal-precompile packaging strategy. It is not affiliated
 with or endorsed by the original project.
+
+OpenCode, OpenTUI, and Solid supply the host APIs and reactive terminal runtime.
+Babel and babel-preset-solid supply the development-time universal JSX transform.
+These projects retain their respective copyrights and licenses. Their runtime
+implementations are not bundled in dist; npm dependencies retain their own notices.

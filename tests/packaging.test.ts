@@ -61,16 +61,20 @@ test("npm archive includes entrypoints, attribution and no development artifacts
     "SECURITY.md",
     "CONTRIBUTING.md",
     "CHANGELOG.md",
+    "RELEASING.md",
+    "THIRD_PARTY_NOTICES.md",
   ])
     expect(paths).toContain(path)
   expect(paths.some((path) => /^(tests|scripts|node_modules|\.git)\//.test(path))).toBe(false)
   expect(paths.some((path) => /(?:directory|sessions)\.js$/.test(path))).toBe(false)
   const manifest = await Bun.file(join(repo, "package.json")).json()
-  expect(manifest.private).toBe(true)
+  expect(manifest.private).not.toBe(true)
+  expect(manifest.author.name).toBe("YidiDev")
+  expect(manifest.publishConfig).toEqual({ access: "public", registry: "https://registry.npmjs.org/" })
   expect(manifest.exports).toEqual({ ".": "./dist/index.js", "./tui": "./dist/tui.js" })
 }, 30_000)
 
-test("supported host, SDK and integrity fixture remain aligned without publication", async () => {
+test("supported host, SDK and integrity fixture remain aligned", async () => {
   const manifest = await Bun.file(join(repo, "package.json")).json()
   const host = await Bun.file(join(repo, "scripts/host-artifact.json")).json()
   expect(manifest.dependencies["@opencode/plugin"]).toBe(host.version)

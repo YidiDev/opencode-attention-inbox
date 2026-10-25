@@ -1,7 +1,10 @@
 # OpenCode Attention Inbox
 
 A separate, navigation-only OpenCode V2 plugin. Attention sessions live at the
-bottom of the right sidebar and updates without switching away from your work.
+bottom of the right sidebar and update without switching away from your work.
+
+Created and maintained by **[YidiDev](https://github.com/YidiDev)**. MIT licensed;
+derived from Yash Patel's session-history plugin with original notices retained.
 
 - Pending **permissions** and **questions**, including blocking child sessions.
 - Successful unread completions, using OpenCode's native idle/viewed markers.
@@ -20,11 +23,27 @@ Compact tab-like rows (synthetic acceptance fixtures):
    ● Fixture completed
 ```
 
-## Local installation
+## Installation
 
 Built against **OpenCode 2.1.4**, Bun **1.4.0**, Linux x64. The V2 plugin API is
-experimental; other host versions are not yet verified. This repository is private;
-the npm package is unpublished.
+experimental; other host versions are not yet verified. The 1.0 release line is
+currently in release-candidate validation; see GitHub Releases for published versions.
+
+Once the version is published, add the version-pinned npm package to global
+`~/.config/opencode/cli.json` (or `$XDG_CONFIG_HOME/opencode/cli.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": ["opencode-attention-inbox@1.0.0-rc.1"]
+}
+```
+
+Merge it with existing plugins/settings; do not replace the whole file. Stable
+1.0.0 will be published under npm `latest`, prereleases under `next`. OpenCode
+loads the compiled package directly: users do not need to clone or build it.
+
+### Local development installation
 
 The development/check workflow below requires **npm** as well as Bun: packaging
 tests invoke `npm pack`. If your Bun installation does not include npm, install
@@ -202,12 +221,17 @@ only its own server and tmux instance. Requires `opencode`, `tmux`, `git`, `npm`
 and `tar` on PATH.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for CI, compatibility, security checks,
-and the release checklist, and [CHANGELOG.md](CHANGELOG.md) for changes.
+and [RELEASING.md](RELEASING.md) for versioning, npm trust and release recovery.
+See [CHANGELOG.md](CHANGELOG.md) for changes.
 
 ## Attribution
 
 Derived from [ypxcs/opencode-session-history](https://github.com/ypxcs/opencode-session-history),
 MIT, base commit `2d61f0cd5205ef673fb547a3a5e7b454796c026b` (0.1.5).
+
+See [NOTICE](NOTICE), [LICENSE](LICENSE) and
+[third-party acknowledgments](THIRD_PARTY_NOTICES.md). Your use of dependencies
+remains subject to their own licenses; this project does not claim their copyright.
 The original copyright/license is retained in `LICENSE`. The attention model,
 reconciler and inbox replace the history behavior; the Solid packaging approach
 is retained. See `NOTICE`.
