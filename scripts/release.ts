@@ -137,7 +137,21 @@ async function publish() {
     console.log("Identical npm version already exists; continuing verification without republishing")
     return
   }
-  run("npm", ["publish", path, "--ignore-scripts", "--access", "public", "--tag", data.distTag])
+  const result = parsePackResult(
+    run("npm", [
+      "publish",
+      path,
+      "--ignore-scripts",
+      "--access",
+      "public",
+      "--tag",
+      data.distTag,
+      "--json",
+      "--provenance",
+    ]),
+  )
+  if (result.filename !== data.filename) throw new Error("npm acknowledged a different release archive")
+  console.log(`npm acknowledged ${data.filename}; registry verification must still pass`)
 }
 async function verify() {
   const { data } = await artifact()

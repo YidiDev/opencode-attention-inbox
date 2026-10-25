@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.0.0-rc.4
+
+- Require npm's structured publication acknowledgement and explicit provenance generation.
+- Retain fail-closed registry byte verification; RC3 did not pass registry availability verification.
+- No plugin runtime changes from the registry-tested RC2 candidate.
+
 ## 1.0.0-rc.3
 
 - Exercise GitHub Actions trusted publishing with npm OIDC before stable v1.

@@ -87,7 +87,7 @@ npm requires an existing package before adding a trusted publisher:
 
 4. Rerun the tag workflow: it accepts an existing version only when its bytes are
    identical, verifies registry installation, and publishes the GitHub prerelease.
-5. Publish **1.0.0-rc.3** through the tag workflow to actually exercise OIDC, verify
+5. Publish a new candidate through the tag workflow to actually exercise OIDC, verify
    its registry provenance attestation and fresh native installation, then release
    **1.0.0** after acceptance. npm requires a new trust configuration to complete
    its first successful publish within two days; recreate expired configurations.
@@ -100,7 +100,7 @@ settings and environment name must match exactly. Direct npm dist-tag management
 is not granted by this policy. No GitHub App or personal token is required for
 normal tag-triggered releases. npm automatically supplies provenance for OIDC
 publishes from a public repository to a public package; the interactive RC2 bootstrap
-does not have that provenance, so RC3 verifies the final provenance path. A staged
+does not have that provenance, so a subsequent candidate verifies the final provenance path. A staged
 placeholder alone is not a tested plugin release or proof of OIDC publication.
 
 ## Failed or bad releases

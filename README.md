@@ -35,7 +35,7 @@ Add a published, version-pinned npm package to global
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["opencode-attention-inbox@1.0.0-rc.3"]
+  "plugins": ["opencode-attention-inbox@1.0.0-rc.4"]
 }
 ```
 
